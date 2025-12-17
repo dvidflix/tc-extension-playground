@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Object Tools - Debug Version</title>
+  <title>Simple Object Tools - Fixed Version</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
@@ -12,19 +12,18 @@
     button:hover { background: #106ebe; }
     button.clear { background: #d13438; }
     button.clear:hover { background: #b0292d; }
-    #status { margin-top: 20px; font-size: 14px; color: #555; white-space: pre-wrap; }
+    #status { margin-top: 20px; font-size: 14px; color: #555; }
     .error { color: red; }
     .success { color: green; }
-    #debug { margin-top: 20px; padding: 10px; background: #fff; border: 1px solid #ccc; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    #debug { margin-top: 20px; padding: 10px; background: #fff; border: 1px solid #ccc; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>Simple Object Tools (Debug Version)</h1>
+  <h1>Simple Object Tools (Fixed)</h1>
   
   <button id="colorRed">Color Selected Red</button>
   <button id="addText">Add "Test" Markup</button>
   <button id="clearMarkups" class="clear">Clear Markups</button>
-  <button id="testConnection">Test Connection & Selection</button>
   
   <div id="status"></div>
   <pre id="debug">Debug log:\n</pre>
@@ -51,7 +50,9 @@
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
         log('Connected successfully!');
-        setStatus('Connected to Trimble Connect', 'success');
+        log('Viewer API available: ' + !!tcApi.viewer);
+        log('Markup API available: ' + !!tcApi.viewer?.markup);
+        setStatus('Connected successfully', 'success');
       } catch (err) {
         log('Connection failed: ' + err.message);
         setStatus('Connection failed: ' + err.message, 'error');
@@ -59,10 +60,9 @@
     }
 
     async function getSelectedObjects() {
-      if (!tcApi) return [];
       try {
         const selection = await tcApi.viewer.getSelection();
-        log('Raw selection: ' + JSON.stringify(selection, null, 2));
+        log('Selection retrieved: ' + JSON.stringify(selection));
         const objects = [];
         for (const sel of selection) {
           if (sel.modelId && sel.objectRuntimeIds?.length > 0) {
@@ -76,87 +76,83 @@
       }
     }
 
-    document.getElementById('testConnection').addEventListener('click', async () => {
-      if (!tcApi) {
-        setStatus('Not connected', 'error');
-        return;
-      }
-      setStatus('Testing...');
-      const selected = await getSelectedObjects();
-      if (selected.length === 0) {
-        setStatus('No objects selected in viewer', 'error');
-      } else {
-        setStatus(`Found ${selected.length} model group(s) with total ${selected.reduce((s, o) => s + o.objectIds.length, 0)} objects`, 'success');
-      }
-    });
-
+    // Color button - now clears all colors first, then applies red to selected
     document.getElementById('colorRed').addEventListener('click', async () => {
       log('Color button clicked');
       try {
+        // First, reset all object colors to default
+        await tcApi.viewer.setObjectState([]);
+        log('All object colors reset');
+
         const selected = await getSelectedObjects();
         if (selected.length === 0) {
           setStatus('No objects selected', 'error');
           return;
         }
-        log(`Applying red color to ${selected.length} groups`);
 
+        // Apply red to each selected model/group
         for (const obj of selected) {
-          log(`Setting color for model ${obj.modelId}, ${obj.objectIds.length} objects`);
           await tcApi.viewer.setObjectState({
             modelId: obj.modelId,
             objectIds: obj.objectIds,
             color: { r: 255, g: 0, b: 0, a: 255 }
           });
+          log(`Red color applied to model ${obj.modelId}, ${obj.objectIds.length} objects`);
         }
-        setStatus('Color applied (check viewer)', 'success');
+
+        setStatus('Selected objects colored red!', 'success');
       } catch (err) {
-        log('Color error: ' + err.message);
-        setStatus('Color error: ' + err.message, 'error');
+        log('Color error: ' + err + ' | ' + err.message);
+        setStatus('Color failed: ' + err.message, 'error');
       }
     });
 
+    // Add markup button - fixed position, always visible
     document.getElementById('addText').addEventListener('click', async () => {
       log('Add markup button clicked');
       await clearMarkups();
       try {
-        const textPos = { x: 0, y: 0, z: 5 };
+        const textPos = { x: 0, y: 0, z: 10 }; // Higher for better visibility
         const anchorPos = { x: 0, y: 0, z: 0 };
 
-        log('Adding text markup...');
         const textId = await tcApi.viewer.markup.addTextMarkup({
           text: "Test",
           position: textPos,
           color: { r: 0, g: 0, b: 0 },
           backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
-          fontSize: 48,
-          padding: 12,
-          borderWidth: 2,
-          borderColor: { r: 0, g: 0, b: 0 }
+          fontSize: 64, // Larger text
+          padding: 20,
+          borderWidth: 4,
+          borderColor: { r: 255, g: 0, b: 0 } // Red border for visibility
         });
         markupIds.push(textId);
-        log('Text markup added, ID: ' + textId);
+        log('Text markup added: ' + textId);
 
-        log('Adding arrow markup...');
         const arrowId = await tcApi.viewer.markup.addArrowMarkup({
           start: textPos,
           end: anchorPos,
-          color: { r: 0, g: 0, b: 0 },
-          width: 6
+          color: { r: 255, g: 0, b: 0 },
+          width: 10
         });
         markupIds.push(arrowId);
-        log('Arrow markup added, ID: ' + arrowId);
+        log('Arrow markup added: ' + arrowId);
 
-        setStatus('Test markup added (look around origin)', 'success');
+        setStatus('"Test" markup added - look near the model origin!', 'success');
       } catch (err) {
-        log('Markup error: ' + err.message);
-        setStatus('Markup error: ' + err.message, 'error');
+        log('Markup error: ' + err + ' | ' + err.message);
+        setStatus('Markup failed: ' + err.message, 'error');
       }
     });
 
     async function clearMarkups() {
       log('Clearing markups...');
       for (const id of markupIds) {
-        try { await tcApi.viewer.markup.removeMarkup(id); log('Removed markup ' + id); } catch (e) { log('Remove error: ' + e.message); }
+        try {
+          await tcApi.viewer.markup.removeMarkup(id);
+          log('Removed markup ' + id);
+        } catch (e) {
+          log('Remove error: ' + e.message);
+        }
       }
       markupIds = [];
     }
