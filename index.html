@@ -6,36 +6,13 @@
   <title>Simple Object Tools</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      margin: 20px;
-      background: #f5f5f5;
-    }
-    h1 {
-      font-size: 18px;
-      margin-bottom: 20px;
-      color: #333;
-    }
-    button {
-      padding: 12px 20px;
-      margin-right: 12px;
-      margin-bottom: 10px;
-      font-size: 14px;
-      cursor: pointer;
-      background: #0078d4;
-      color: white;
-      border: none;
-      border-radius: 4px;
-    }
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+    h1 { font-size: 18px; margin-bottom: 20px; color: #333; }
+    button { padding: 12px 20px; margin-right: 12px; margin-bottom: 10px; font-size: 14px; cursor: pointer; background: #0078d4; color: white; border: none; border-radius: 4px; }
     button:hover { background: #106ebe; }
-    button:active { background: #005a9e; }
     button.clear { background: #d13438; }
     button.clear:hover { background: #b0292d; }
-    #status {
-      margin-top: 20px;
-      font-size: 14px;
-      color: #555;
-    }
+    #status { margin-top: 20px; font-size: 14px; color: #555; }
     .error { color: red; }
     .success { color: green; }
   </style>
@@ -45,7 +22,7 @@
   
   <button id="colorRed">Color Selected Red</button>
   <button id="addText">Add "Test" Markup Near Selected</button>
-  <button id="clearMarkups" class="clear">Clear All Markups</button>
+  <button id="clearMarkups" class="clear">Clear Markups</button>
   
   <div id="status"></div>
 
@@ -56,7 +33,7 @@
     async function init() {
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
-        setStatus('Connected to Trimble Connect', 'success');
+        setStatus('Connected successfully', 'success');
       } catch (err) {
         setStatus('Connection failed: ' + err.message, 'error');
       }
@@ -72,39 +49,33 @@
       const selection = await tcApi.viewer.getSelection();
       const objects = [];
       for (const sel of selection) {
-        if (sel.modelId && sel.objectRuntimeIds && sel.objectRuntimeIds.length > 0) {
-          objects.push({
-            modelId: sel.modelId,
-            objectIds: sel.objectRuntimeIds
-          });
+        if (sel.modelId && sel.objectRuntimeIds?.length > 0) {
+          objects.push({ modelId: sel.modelId, objectIds: sel.objectRuntimeIds });
         }
       }
       return objects;
     }
 
-    // Helper to get approximate center from bounding box
     async function getApproximateCenter(modelId, objectIds) {
       try {
         const bounds = await tcApi.viewer.getObjectBounds(modelId, objectIds);
-        if (bounds && bounds.min && bounds.max) {
+        if (bounds?.min && bounds?.max) {
           return {
             x: (bounds.min.x + bounds.max.x) / 2,
             y: (bounds.min.y + bounds.max.y) / 2,
-            z: (bounds.min.z + bounds.max.z) / 2 + 2  // slightly above center
+            z: (bounds.min.z + bounds.max.z) / 2 + 2
           };
         }
-      } catch (e) {}
-      return { x: 0, y: 0, z: 5 }; // fallback
+      } catch (e) {
+        console.warn('Bounds failed:', e);
+      }
+      return { x: 0, y: 0, z: 5 }; // Safe visible fallback
     }
 
-    // Button: Color selected objects red
     document.getElementById('colorRed').addEventListener('click', async () => {
       try {
         const selected = await getSelectedObjects();
-        if (selected.length === 0) {
-          setStatus('No objects selected', 'error');
-          return;
-        }
+        if (selected.length === 0) return setStatus('No objects selected', 'error');
 
         for (const obj of selected) {
           await tcApi.viewer.setObjectState({
@@ -113,33 +84,21 @@
             color: { r: 255, g: 0, b: 0, a: 255 }
           });
         }
-
-        const totalObjects = selected.reduce((sum, o) => sum + o.objectIds.length, 0);
-        setStatus(`Colored ${totalObjects} object(s) red`, 'success');
+        setStatus(`Colored ${selected.reduce((s, o) => s + o.objectIds.length, 0)} object(s) red`, 'success');
       } catch (err) {
-        setStatus('Color error: ' + err.message, 'error');
+        setStatus('Error: ' + err.message, 'error');
       }
     });
 
-    // Button: Add "Test" text markup near the first selected object
     document.getElementById('addText').addEventListener('click', async () => {
+      await clearMarkups(); // Clear previous to avoid clutter
       try {
         const selected = await getSelectedObjects();
-        if (selected.length === 0) {
-          setStatus('No objects selected', 'error');
-          return;
-        }
+        if (selected.length === 0) return setStatus('No objects selected', 'error');
 
-        // Use the first selected group to position the markup
         const first = selected[0];
         const textPos = await getApproximateCenter(first.modelId, first.objectIds);
-
-        // Anchor a bit lower for the arrow end
-        const anchorPos = {
-          x: textPos.x,
-          y: textPos.y,
-          z: textPos.z - 4
-        };
+        const anchorPos = { x: textPos.x, y: textPos.y, z: textPos.z - 4 };
 
         const textId = await tcApi.viewer.markup.addTextMarkup({
           text: "Test",
@@ -161,23 +120,25 @@
         });
         markupIds.push(arrowId);
 
-        setStatus('Added "Test" markup near selected object(s)', 'success');
+        // Zoom to selected for better visibility
+        await tcApi.viewer.zoomTo({ modelObjectIds: selected.map(o => ({ modelId: o.modelId, objectRuntimeIds: o.objectIds })) });
+
+        setStatus('Added "Test" markup near selected object', 'success');
       } catch (err) {
         setStatus('Markup error: ' + err.message, 'error');
       }
     });
 
-    // Button: Clear all created markups
-    document.getElementById('clearMarkups').addEventListener('click', async () => {
-      try {
-        for (const id of markupIds) {
-          await tcApi.viewer.markup.removeMarkup(id).catch(() => {});
-        }
-        markupIds = [];
-        setStatus('All markups cleared', 'success');
-      } catch (err) {
-        setStatus('Clear error: ' + err.message, 'error');
+    async function clearMarkups() {
+      for (const id of markupIds) {
+        try { await tcApi.viewer.markup.removeMarkup(id); } catch {}
       }
+      markupIds = [];
+    }
+
+    document.getElementById('clearMarkups').addEventListener('click', async () => {
+      await clearMarkups();
+      setStatus('Markups cleared', 'success');
     });
 
     window.addEventListener('load', init);
