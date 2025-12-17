@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rebar Labels</title>
+  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="header-title">Rebar Labels</div>
+      <!-- Clean Views selector without "Views" label -->
+      <div class="views-selector-container">
+        <button id="viewsDropdown" class="views-dropdown-button">
+          <span id="viewsText">Selected objects</span>
+          <img src="chevron-down.svg" class="dropdown-arrow" alt="▼">
+        </button>
+        <div id="viewsMenu" class="views-dropdown-menu">
+          <div class="views-item selected" data-value="selected">
+            Selected objects
+            <img src="check-bold.svg" class="checkmark selected" alt="✓">
+          </div>
+          <div class="views-item" data-value="visible">
+            Visible objects
+            <img src="check-bold.svg" class="checkmark" alt="✓">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="refresh" title="Refresh Rebar Data">
+        <img src="update.svg" alt="Refresh">
+      </button>
+      <button id="colorGroups" class="toggle-button" title="Color Groups (Random)">
+        <img src="background.svg" alt="Color Groups">
+      </button>
+      <button id="sortButton" title="Sort">
+        <img src="sort.svg" alt="Sort">
+      </button>
+      <button id="labelSelected" disabled title="Label Selected Group(s)">
+        <img src="tag.svg" alt="Label Selected">
+      </button>
+      <button id="labelAll" disabled title="Label All Groups">
+        <img src="tag_solid.svg" alt="Label All">
+      </button>
+      <button id="clear" disabled title="Clear Labels">
+        <img src="tag_solid-disabled.svg" alt="Clear Labels">
+      </button>
+      <button id="zoomCenter" title="Zoom to Selected">
+        <img src="zoom-center.svg" alt="Zoom Center">
+      </button>
+    </div>
+  </div>
+
+  <!-- Advanced Sort Popup -->
+  <div id="sortPopup" class="sort-popup">
+    <div class="sort-header">
+      <span class="sort-count">1 Sort</span>
+      <button id="addSort" class="add-sort-btn">+ Add sort</button>
+    </div>
+    <div id="sortLevels"></div>
+  </div>
+
+  <table id="rebarTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th data-sort="mark">Mark</th>
+        <th data-sort="startX">Start X</th>
+        <th data-sort="startY">Start Y</th>
+        <th data-sort="endX">End X</th>
+        <th data-sort="endY">End Y</th>
+        <th data-sort="diameter">Diam.</th>
+        <th data-sort="shape">Shape code</th>
+        <th data-sort="length">Length</th>
+        <th data-sort="quantity">Count</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="footer-info">
+    <div class="status" id="status"></div>
+    <div class="instructions">
+      Select one or more rebar groups → use buttons above.
+    </div>
+    <label class="template-label">
+      <strong>Label Template:</strong>
+      <textarea id="template" rows="2">[ {Serial number} ] H {Start Point X} ; V {Start Point Y}</textarea>
+    </label>
+  </div>
+
+  <h3 class="debug-title">Debug Console</h3>
+  <pre id="debugConsole">Debug messages will appear here...</pre>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script>
+    let tcApi;
+    let groups = [];
+    let markupIds = [];
+    let selectedGroups = new Set();
+    let groupColors = {};
+    let sortColumns = [];
+    let expandedGroups = new Set();
+    let coloringActive = false;
+    let currentViewMode = 'selected';
+
+    const debugConsole = document.getElementById('debugConsole');
+
+    function debug(msg) {
+      const time = new Date().toLocaleTimeString();
+      debugConsole.textContent += `[${time}] ${msg}\n`;
+      debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+
+    // Views Dropdown
+    const viewsDropdown = document.getElementById('viewsDropdown');
+    const viewsMenu = document.getElementById('viewsMenu');
+    const viewsText = document.getElementById('viewsText');
+
+    viewsDropdown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      viewsMenu.classList.toggle('show');
+    });
+
+    document.querySelectorAll('#viewsMenu .views-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        viewsText.textContent = item.textContent.trim();
+        currentViewMode = item.dataset.value;
+
+        document.querySelectorAll('.checkmark').forEach(img => img.classList.remove('selected'));
+        item.querySelector('.checkmark').classList.add('selected');
+
+        document.querySelectorAll('.views-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+
+        viewsMenu.classList.remove('show');
+      });
+    });
+
+    document.addEventListener('click', () => {
+      viewsMenu.classList.remove('show');
+    });
+
+    async function init() {
+      try {
+        tcApi = await TrimbleConnectWorkspace.connect(window.parent);
+        debug('Connected successfully');
+      } catch (err) {
+        debug('Connection error: ' + err.message);
+      }
+    }
+
+    async function clearMarkups() {
+      for (const id of markupIds) {
+        try { await tcApi.viewer.markup.removeMarkup(id); } catch (e) {}
+      }
+      markupIds = [];
+    }
+
+    async function addLabel(group) {
+      const flat = flattenProps(group.sampleProps);
+      let text = document.getElementById('template').value;
+      for (const [key, value] of Object.entries(flat)) {
+        text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '');
+      }
+      text = text.replace(/\{[^}]+\}/g, '').trim() || 'Rebar';
+
+      try {
+        const textPos = { x: 0, y: 0, z: 5.0 };
+        const anchor = { x: 0, y: 0, z: 0 };
+        const textId = await tcApi.viewer.markup.addTextMarkup({
+          text, position: textPos, color: { r: 0, g: 0, b: 0 },
+          backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
+          fontSize: 48, padding: 12, borderWidth: 2, borderColor: { r: 0, g: 0, b: 0 }
+        });
+        markupIds.push(textId);
+        const arrowId = await tcApi.viewer.markup.addArrowMarkup({
+          start: textPos, end: anchor, color: { r: 0, g: 0, b: 0 }, width: 6
+        });
+        markupIds.push(arrowId);
+      } catch (e) { debug('Label error: ' + e.message); }
+    }
+
+    async function labelSelectedGroups() {
+      if (selectedGroups.size === 0) return;
+      await clearMarkups();
+      for (const group of selectedGroups) await addLabel(group);
+    }
+
+    async function labelAllGroups() {
+      await clearMarkups();
+      for (const group of groups) await addLabel(group);
+    }
+
+    function flattenProps(props) {
+      const flat = {};
+      if (!props?.properties) return flat;
+      props.properties.forEach(pset => {
+        if (pset.properties) pset.properties.forEach(prop => {
+          if (prop.value !== undefined) flat[prop.name] = prop.value;
+        });
+      });
+      return flat;
+    }
+
+    async function toggleColorGroups() {
+      coloringActive = !coloringActive;
+      document.getElementById('colorGroups').classList.toggle('active', coloringActive);
+      coloringActive ? await colorGroups() : await clearColors();
+    }
+
+    async function colorGroups() {
+      try { await tcApi.viewer.setObjectState([]); } catch (e) {}
+      groupColors = {};
+      for (const group of groups) {
+        const color = { r: Math.floor(Math.random() * 256), g: Math.floor(Math.random() * 256), b: Math.floor(Math.random() * 256), a: 255 };
+        groupColors[group.key] = color;
+        group.color = color;
+        try {
+          await tcApi.viewer.setObjectState({
+            modelId: group.modelId,
+            objectIds: group.objectIds,
+            color: color
+          });
+        } catch (e) {}
+      }
+      renderTable();
+    }
+
+    async function clearColors() {
+      groupColors = {};
+      groups.forEach(g => g.color = null);
+      try { await tcApi.viewer.setObjectState([]); } catch (e) {}
+      renderTable();
+    }
+
+    async function selectAndZoomGroup(group) {
+      const modelObjectIds = [{ modelId: group.modelId, objectRuntimeIds: group.objectIds }];
+      try {
+        await tcApi.viewer.setSelection({ modelObjectIds }, "set");
+        await tcApi.viewer.zoomTo({ modelObjectIds });
+      } catch (e) {}
+    }
+
+    async function zoomToSelected() {
+      if (selectedGroups.size > 0) await selectAndZoomGroup([...selectedGroups][0]);
+    }
+
+    // Fixed sorting for all columns including endpoints
+    function sortTable() {
+      groups.sort((a, b) => {
+        for (const {col, dir} of sortColumns) {
+          let A = a[col] ?? '';
+          let B = b[col] ?? '';
+
+          if (col === 'shape') {
+            if (A !== B) return A.localeCompare(B) * (dir === 'asc' ? 1 : -1);
+          } else {
+            // Treat empty or '--' as -Infinity for numeric sort
+            const numA = (A === '' || A === '--') ? -Infinity : parseFloat(A);
+            const numB = (B === '' || B === '--') ? -Infinity : parseFloat(B);
+            if (numA !== numB) return (numA < numB ? -1 : 1) * (dir === 'asc' ? 1 : -1);
+          }
+        }
+        return 0;
+      });
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.querySelector('#rebarTable tbody');
+      tbody.innerHTML = '';
+
+      let totalBars = 0;
+      let maxStartX = -Infinity, maxStartY = -Infinity;
+      let maxEndX = -Infinity, maxEndY = -Infinity;
+
+      groups.forEach(group => {
+        totalBars += group.quantity;
+        ['commonStartX', 'commonStartY', 'commonEndX', 'commonEndY'].forEach(coord => {
+          const val = parseFloat(group[coord]);
+          if (!isNaN(val)) {
+            if (coord === 'commonStartX') maxStartX = Math.max(maxStartX, val);
+            if (coord === 'commonStartY') maxStartY = Math.max(maxStartY, val);
+            if (coord === 'commonEndX') maxEndX = Math.max(maxEndX, val);
+            if (coord === 'commonEndY') maxEndY = Math.max(maxEndY, val);
+          }
+        });
+
+        const color = group.color || { r: 255, g: 255, b: 255 };
+        const isSelected = selectedGroups.has(group);
+
+        const groupTr = document.createElement('tr');
+        groupTr.className = 'group-row' + (isSelected ? ' selected' : '');
+        groupTr.dataset.groupKey = group.key;
+        groupTr.dataset.groupIndex = groups.indexOf(group);
+        groupTr.innerHTML = `
+          <td class="expand-cell" style="background-color: rgb(${color.r},${color.g},${color.b});">
+            <img src="${expandedGroups.has(group.key) ? 'chevron-down.svg' : 'chevron-right.svg'}" class="expand-icon">
+          </td>
+          <td class="center">${group.mark}</td>
+          <td class="numeric">${group.commonStartX || '--'}</td>
+          <td class="numeric">${group.commonStartY || '--'}</td>
+          <td class="numeric">${group.commonEndX || '--'}</td>
+          <td class="numeric">${group.commonEndY || '--'}</td>
+          <td class="center">${group.diameter || '--'}</td>
+          <td>${group.shape || '--'}</td>
+          <td class="numeric">${group.length}</td>
+          <td class="center">${group.quantity}</td>
+        `;
+
+        groupTr.addEventListener('click', (e) => handleRowClick(e, group, groupTr));
+        tbody.appendChild(groupTr);
+
+        if (expandedGroups.has(group.key)) {
+          group.individualBars.forEach((bar, idx) => {
+            const childTr = document.createElement('tr');
+            childTr.className = 'child-row' + (isSelected ? ' selected' : '');
+            childTr.dataset.groupKey = group.key;
+            childTr.innerHTML = `
+              <td class="center index-cell">${idx + 1}</td>
+              <td class="center gray-bg">${group.mark}</td>
+              <td class="numeric">${bar.startX || '--'}</td>
+              <td class="numeric">${bar.startY || '--'}</td>
+              <td class="numeric">${bar.endX || '--'}</td>
+              <td class="numeric">${bar.endY || '--'}</td>
+              <td class="center gray-bg">${group.diameter || '--'}</td>
+              <td class="gray-bg">${group.shape || '--'}</td>
+              <td class="numeric gray-bg">${group.length}</td>
+              <td class="center gray-bg">${group.quantity}</td>
+            `;
+            childTr.addEventListener('click', (e) => handleRowClick(e, group, childTr));
+            tbody.appendChild(childTr);
+          });
+        }
+      });
+
+      if (groups.length > 0) {
+        const totalsTr = document.createElement('tr');
+        totalsTr.className = 'totals-row';
+        totalsTr.innerHTML = `
+          <td colspan="1"><strong>Total</strong></td>
+          <td class="center"><strong>${groups.length} groups</strong></td>
+          <td class="numeric">${isFinite(maxStartX) ? 'Max ' + maxStartX : '--'}</td>
+          <td class="numeric">${isFinite(maxStartY) ? 'Max ' + maxStartY : '--'}</td>
+          <td class="numeric">${isFinite(maxEndX) ? 'Max ' + maxEndX : '--'}</td>
+          <td class="numeric">${isFinite(maxEndY) ? 'Max ' + maxEndY : '--'}</td>
+          <td class="center">--</td>
+          <td>--</td>
+          <td class="numeric">--</td>
+          <td class="center"><strong>${totalBars}</strong></td>
+        `;
+        tbody.appendChild(totalsTr);
+      }
+
+      updateLabelButtonState();
+    }
+
+    // Fixed multi-selection with Ctrl + Shift
+    let lastClickedIndex = -1;
+
+    function handleRowClick(e, group, rowElement) {
+      if (e.target.classList.contains('expand-icon') || e.target.closest('.expand-icon')) {
+        e.stopPropagation();
+        expandedGroups.has(group.key) ? expandedGroups.delete(group.key) : expandedGroups.add(group.key);
+        renderTable();
+        return;
+      }
+
+      const currentIndex = groups.indexOf(group);
+      const isCtrl = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+
+      if (isShift && lastClickedIndex !== -1) {
+        const start = Math.min(lastClickedIndex, currentIndex);
+        const end = Math.max(lastClickedIndex, currentIndex);
+        selectedGroups.clear();
+        for (let i = start; i <= end; i++) {
+          selectedGroups.add(groups[i]);
+        }
+      } else if (isCtrl) {
+        if (selectedGroups.has(group)) {
+          selectedGroups.delete(group);
+        } else {
+          selectedGroups.add(group);
+        }
+        lastClickedIndex = currentIndex;
+      } else {
+        selectedGroups.clear();
+        selectedGroups.add(group);
+        lastClickedIndex = currentIndex;
+      }
+
+      // Update visual selection
+      document.querySelectorAll('tr').forEach(tr => {
+        const gKey = tr.dataset.groupKey;
+        if (gKey) {
+          const grp = groups.find(g => g.key === gKey);
+          if (grp) tr.classList.toggle('selected', selectedGroups.has(grp));
+        }
+      });
+
+      updateLabelButtonState();
+      if (selectedGroups.size === 1) selectAndZoomGroup(group);
+    }
+
+    function updateLabelButtonState() {
+      document.getElementById('labelSelected').disabled = selectedGroups.size === 0;
+      document.getElementById('labelAll').disabled = groups.length === 0;
+      document.getElementById('clear').disabled = markupIds.length === 0;
+    }
+
+    async function processRebar() {
+      debug('=== REFRESH STARTED ===');
+      await clearMarkups();
+      groups = [];
+      selectedGroups.clear();
+      expandedGroups = new Set();
+      updateLabelButtonState();
+
+      const tbody = document.querySelector('#rebarTable tbody');
+      tbody.innerHTML = '<tr><td colspan="10">Processing...</td></tr>';
+
+      try {
+        let objects = [];
+
+        if (currentViewMode === 'selected') {
+          const selection = await tcApi.viewer.getSelection();
+          if (selection.length === 0) throw new Error('No objects selected.');
+          for (const sel of selection) {
+            const modelId = sel.modelId;
+            const runtimeIds = sel.objectRuntimeIds || [];
+            if (!modelId || runtimeIds.length === 0) continue;
+            const propsArray = await tcApi.viewer.getObjectProperties(modelId, runtimeIds);
+            propsArray.forEach((props, i) => {
+              if (hasRebarProps(props)) objects.push({ id: runtimeIds[i], props, modelId });
+            });
+          }
+        } else if (currentViewMode === 'visible') {
+          const result = await tcApi.viewer.getObjects({ objectState: { visibility: 'visible' } });
+          for (const item of result) {
+            const modelId = item.modelId;
+            const runtimeIds = item.objectRuntimeIds || [];
+            if (runtimeIds.length === 0) continue;
+            const propsArray = await tcApi.viewer.getObjectProperties(modelId, runtimeIds);
+            propsArray.forEach((props, i) => {
+              if (hasRebarProps(props)) objects.push({ id: runtimeIds[i], props, modelId });
+            });
+          }
+        }
+
+        if (objects.length === 0) throw new Error('No rebar elements found.');
+
+        const groupMap = {};
+        for (const item of objects) {
+          const flat = flattenProps(item.props);
+          const mark = flat['Serial number'] || flat['Rebar mark'] || flat['Group position number'] || 'Unknown';
+          const dia = flat['Size'] || '';
+          const shape = flat['Shape'] || flat['Shape code'] || '';
+          const length = Math.round(Number(flat['Length'] || 0));
+          const key = `${mark}|${dia}|${length}|${shape}|${item.modelId}`;
+
+          if (!groupMap[key]) {
+            groupMap[key] = {
+              key, mark, diameter: dia, shape, length,
+              objectIds: [], sampleProps: item.props, modelId: item.modelId,
+              individualBars: []
+            };
+          }
+          groupMap[key].objectIds.push(item.id);
+          groupMap[key].individualBars.push({
+            startX: flat['Start Point X'] || '',
+            startY: flat['Start Point Y'] || '',
+            endX: flat['End Point X'] || '',
+            endY: flat['End Point Y'] || ''
+          });
+        }
+
+        groups = Object.values(groupMap);
+        groups.forEach(g => {
+          g.quantity = g.objectIds.length;
+          const startsX = new Set(g.individualBars.map(b => b.startX));
+          g.commonStartX = startsX.size === 1 ? g.individualBars[0].startX : '';
+          const startsY = new Set(g.individualBars.map(b => b.startY));
+          g.commonStartY = startsY.size === 1 ? g.individualBars[0].startY : '';
+          const endsX = new Set(g.individualBars.map(b => b.endX));
+          g.commonEndX = endsX.size === 1 ? g.individualBars[0].endX : '';
+          const endsY = new Set(g.individualBars.map(b => b.endY));
+          g.commonEndY = endsY.size === 1 ? g.individualBars[0].endY : '';
+        });
+
+        sortTable();
+        document.getElementById('labelAll').disabled = false;
+        document.getElementById('status').textContent = `Success! Found ${groups.length} groups from ${objects.length} bars.`;
+        document.getElementById('status').classList.add('good');
+      } catch (err) {
+        debug('ERROR: ' + err.message);
+        tbody.innerHTML = `<tr><td colspan="10">Error: ${err.message}</td></tr>`;
+        document.getElementById('status').textContent = 'Failed: ' + err.message;
+        document.getElementById('status').classList.add('error');
+      }
+    }
+
+    function hasRebarProps(props) {
+      return props.properties?.some(p => p.name === 'Tekla Reinforcement - Bending List' || p.name === 'ICOS Rebar');
+    }
+
+    // Sort popup — fixed mouse clicks
+    const sortPopup = document.getElementById('sortPopup');
+    const sortLevels = document.getElementById('sortLevels');
+    const addSortBtn = document.getElementById('addSort');
+    const sortCount = document.querySelector('.sort-count');
+
+    const columns = ['mark', 'startX', 'startY', 'endX', 'endY', 'diameter', 'shape', 'length', 'quantity'];
+    const columnNames = { mark: 'Mark', startX: 'Start X', startY: 'Start Y', endX: 'End X', endY: 'End Y', diameter: 'Diam.', shape: 'Shape code', length: 'Length', quantity: 'Count' };
+
+    function createSortLevel(levelIndex, col = 'mark', dir = 'asc') {
+      const level = document.createElement('div');
+      level.className = 'sort-level';
+      level.innerHTML = `
+        <span class="grip">⋮⋮</span>
+        <button class="remove-sort">×</button>
+        <select class="sort-column">
+          ${columns.map(c => `<option value="${c}" ${c===col?'selected':''}>${columnNames[c]}</option>`).join('')}
+        </select>
+        <select class="sort-direction">
+          <option value="asc" ${dir==='asc'?'selected':''}>Up</option>
+          <option value="desc" ${dir==='desc'?'selected':''}>Down</option>
+        </select>
+      `;
+      level.querySelector('.remove-sort').onclick = (e) => { e.stopPropagation(); level.remove(); updateSortColumns(); };
+      level.querySelectorAll('select').forEach(sel => {
+        sel.onchange = (e) => { e.stopPropagation(); updateSortColumns(); };
+      });
+      return level;
+    }
+
+    function updateSortColumns() {
+      sortColumns = [];
+      document.querySelectorAll('.sort-level').forEach(level => {
+        sortColumns.push({
+          col: level.querySelector('.sort-column').value,
+          dir: level.querySelector('.sort-direction').value
+        });
+      });
+      sortCount.textContent = `${sortColumns.length} Sort${sortColumns.length !== 1 ? 's' : ''}`;
+      sortTable();
+    }
+
+    addSortBtn.onclick = (e) => {
+      e.stopPropagation();
+      sortLevels.appendChild(createSortLevel(sortLevels.children.length));
+      updateSortColumns();
+    };
+
+    new Sortable(sortLevels, { handle: '.grip', animation: 150, onEnd: updateSortColumns });
+
+    document.getElementById('sortButton').onclick = (e) => {
+      e.stopPropagation();
+      sortLevels.innerHTML = '';
+      sortColumns.forEach((sc, i) => sortLevels.appendChild(createSortLevel(i, sc.col, sc.dir)));
+      if (sortColumns.length === 0) sortLevels.appendChild(createSortLevel(0));
+      updateSortColumns();
+      const rect = document.getElementById('sortButton').getBoundingClientRect();
+      sortPopup.style.top = rect.bottom + 'px';
+      sortPopup.style.right = (window.innerWidth - rect.right) + 'px';
+      sortPopup.style.display = 'block';
+    };
+
+    sortPopup.addEventListener('click', (e) => e.stopPropagation());
+
+    document.addEventListener('click', () => { sortPopup.style.display = 'none'; });
+
+    document.getElementById('refresh').onclick = processRebar;
+    document.getElementById('colorGroups').onclick = toggleColorGroups;
+    document.getElementById('labelSelected').onclick = labelSelectedGroups;
+    document.getElementById('labelAll').onclick = labelAllGroups;
+    document.getElementById('clear').onclick = clearMarkups;
+    document.getElementById('zoomCenter').onclick = zoomToSelected;
+
+    init();
+  </script>
+</body>
+</html>
