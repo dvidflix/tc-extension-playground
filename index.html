@@ -44,14 +44,14 @@
   <h1>Simple Object Tools</h1>
   
   <button id="colorRed">Color Selected Red</button>
-  <button id="addText">Add "Test" Markup</button>
+  <button id="addText">Add "Test" Markup Near Selected</button>
   <button id="clearMarkups" class="clear">Clear All Markups</button>
   
   <div id="status"></div>
 
   <script>
     let tcApi;
-    let markupIds = []; // Keep track of created markups
+    let markupIds = [];
 
     async function init() {
       try {
@@ -68,7 +68,6 @@
       el.className = type;
     }
 
-    // Get currently selected objects as array of {modelId, objectIds}
     async function getSelectedObjects() {
       const selection = await tcApi.viewer.getSelection();
       const objects = [];
@@ -83,7 +82,22 @@
       return objects;
     }
 
-    // Button: Color selected objects red using setObjectState
+    // Helper to get approximate center from bounding box
+    async function getApproximateCenter(modelId, objectIds) {
+      try {
+        const bounds = await tcApi.viewer.getObjectBounds(modelId, objectIds);
+        if (bounds && bounds.min && bounds.max) {
+          return {
+            x: (bounds.min.x + bounds.max.x) / 2,
+            y: (bounds.min.y + bounds.max.y) / 2,
+            z: (bounds.min.z + bounds.max.z) / 2 + 2  // slightly above center
+          };
+        }
+      } catch (e) {}
+      return { x: 0, y: 0, z: 5 }; // fallback
+    }
+
+    // Button: Color selected objects red
     document.getElementById('colorRed').addEventListener('click', async () => {
       try {
         const selected = await getSelectedObjects();
@@ -92,22 +106,22 @@
           return;
         }
 
-        // Apply red color to each selected group
         for (const obj of selected) {
           await tcApi.viewer.setObjectState({
             modelId: obj.modelId,
             objectIds: obj.objectIds,
-            color: { r: 255, g: 0, b: 0, a: 255 } // Solid red
+            color: { r: 255, g: 0, b: 0, a: 255 }
           });
         }
 
-        setStatus(`Colored ${selected.reduce((sum, o) => sum + o.objectIds.length, 0)} object(s) red`, 'success');
+        const totalObjects = selected.reduce((sum, o) => sum + o.objectIds.length, 0);
+        setStatus(`Colored ${totalObjects} object(s) red`, 'success');
       } catch (err) {
         setStatus('Color error: ' + err.message, 'error');
       }
     });
 
-    // Button: Add "Test" text markup with arrow
+    // Button: Add "Test" text markup near the first selected object
     document.getElementById('addText').addEventListener('click', async () => {
       try {
         const selected = await getSelectedObjects();
@@ -116,11 +130,17 @@
           return;
         }
 
-        // Simple fixed position slightly above origin (works in most models)
-        const textPos = { x: 0, y: 0, z: 5 };
-        const anchorPos = { x: 0, y: 0, z: 0 };
+        // Use the first selected group to position the markup
+        const first = selected[0];
+        const textPos = await getApproximateCenter(first.modelId, first.objectIds);
 
-        // Add text markup
+        // Anchor a bit lower for the arrow end
+        const anchorPos = {
+          x: textPos.x,
+          y: textPos.y,
+          z: textPos.z - 4
+        };
+
         const textId = await tcApi.viewer.markup.addTextMarkup({
           text: "Test",
           position: textPos,
@@ -133,7 +153,6 @@
         });
         markupIds.push(textId);
 
-        // Add arrow from text to approximate object location
         const arrowId = await tcApi.viewer.markup.addArrowMarkup({
           start: textPos,
           end: anchorPos,
@@ -142,7 +161,7 @@
         });
         markupIds.push(arrowId);
 
-        setStatus('Added "Test" markup with arrow', 'success');
+        setStatus('Added "Test" markup near selected object(s)', 'success');
       } catch (err) {
         setStatus('Markup error: ' + err.message, 'error');
       }
