@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Object Tools - Color Only</title>
+  <title>Simple Object Tools - Final Working Version</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
@@ -19,12 +19,12 @@
   </style>
 </head>
 <body>
-  <h1>Simple Object Tools (Color Only)</h1>
+  <h1>Simple Object Tools (Color Selected Red)</h1>
   
   <button id="colorRed">Color Selected Red</button>
   <button id="resetColors" class="reset">Reset All Colors</button>
   
-  <div id="status">Select object(s) in the viewer, then click a button.</div>
+  <div id="status">Select object(s) in the 3D viewer and click "Color Selected Red"</div>
   <pre id="debug">Debug log:\n</pre>
 
   <script>
@@ -48,8 +48,7 @@
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
         log('Connected successfully!');
-        log('Viewer API: ' + !!tcApi.viewer);
-        setStatus('Connected - select objects and try coloring', 'success');
+        setStatus('Connected - ready to color selected objects', 'success');
       } catch (err) {
         log('Connection failed: ' + err.message);
         setStatus('Connection failed: ' + err.message, 'error');
@@ -62,7 +61,7 @@
         log('Current selection: ' + JSON.stringify(selection));
         const objects = [];
         for (const sel of selection) {
-          if (sel.modelId && sel.objectRuntimeIds?.length > 0) {
+          if (sel.modelId && sel.objectRuntimeIds && sel.objectRuntimeIds.length > 0) {
             objects.push({ modelId: sel.modelId, objectIds: sel.objectRuntimeIds });
           }
         }
@@ -73,43 +72,51 @@
       }
     }
 
-    // Color Selected Red
     document.getElementById('colorRed').addEventListener('click', async () => {
       log('Color Red button clicked');
       try {
-        // First reset all colors to default
-        await tcApi.viewer.setObjectState([]);
-        log('All colors reset');
-
         const selected = await getSelectedObjects();
         if (selected.length === 0) {
-          setStatus('No objects selected in viewer', 'error');
+          setStatus('No objects selected in the 3D viewer', 'error');
           return;
         }
 
-        for (const obj of selected) {
-          await tcApi.viewer.setObjectState({
-            modelId: obj.modelId,
-            objectIds: obj.objectIds,
-            color: { r: 255, g: 0, b: 0, a: 255 }
-          });
-          log(`Applied red to model ${obj.modelId}, ${obj.objectIds.length} objects`);
+        // Reset all color overrides first (critical step!)
+        try {
+          await tcApi.viewer.setObjectState([]);
+          log('All color overrides reset');
+        } catch (resetErr) {
+          log('Reset warning (may be normal): ' + resetErr.message);
         }
 
-        setStatus('Selected objects colored RED successfully!', 'success');
+        let coloredCount = 0;
+        for (const obj of selected) {
+          try {
+            await tcApi.viewer.setObjectState({
+              modelId: obj.modelId,
+              objectIds: obj.objectIds,
+              color: { r: 255, g: 0, b: 0, a: 255 }
+            });
+            coloredCount += obj.objectIds.length;
+            log(`Colored ${obj.objectIds.length} objects in model ${obj.modelId}`);
+          } catch (e) {
+            log(`Failed on model ${obj.modelId}: ` + e.message);
+          }
+        }
+
+        setStatus(`Successfully colored ${coloredCount} selected object(s) RED!`, 'success');
       } catch (err) {
-        log('Color error: ' + err + ' | ' + (err.message || ''));
-        setStatus('Color failed: ' + (err.message || err), 'error');
+        log('Overall color error: ' + (err.message || err));
+        setStatus('Coloring failed: ' + (err.message || 'Check debug log'), 'error');
       }
     });
 
-    // Reset All Colors
     document.getElementById('resetColors').addEventListener('click', async () => {
-      log('Reset Colors button clicked');
+      log('Reset Colors clicked');
       try {
         await tcApi.viewer.setObjectState([]);
-        log('All object colors reset to default');
-        setStatus('All colors reset', 'success');
+        log('All color overrides reset');
+        setStatus('All object colors reset to default', 'success');
       } catch (err) {
         log('Reset error: ' + err.message);
         setStatus('Reset failed: ' + err.message, 'error');
