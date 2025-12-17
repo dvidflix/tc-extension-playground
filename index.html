@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Object Tools - Final Working Version</title>
+  <title>Simple Markup Tool</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
     h1 { font-size: 18px; margin-bottom: 20px; color: #333; }
     button { padding: 12px 20px; margin-right: 12px; margin-bottom: 10px; font-size: 14px; cursor: pointer; background: #0078d4; color: white; border: none; border-radius: 4px; }
     button:hover { background: #106ebe; }
-    button.reset { background: #d13438; }
-    button.reset:hover { background: #b0292d; }
+    button.clear { background: #d13438; }
+    button.clear:hover { background: #b0292d; }
     #status { margin-top: 20px; font-size: 14px; color: #555; }
     .error { color: red; }
     .success { color: green; }
@@ -19,16 +19,19 @@
   </style>
 </head>
 <body>
-  <h1>Simple Object Tools (Color Selected Red)</h1>
+  <h1>Playground version 20251217-001</h1>
   
-  <button id="colorRed">Color Selected Red</button>
-  <button id="resetColors" class="reset">Reset All Colors</button>
+  <p><strong>Important:</strong> Click the <strong>Markup tool (pencil icon)</strong> in the Trimble Connect toolbar to activate markup mode. Then come back and click the button below.</p>
   
-  <div id="status">Select object(s) in the 3D viewer and click "Color Selected Red"</div>
+  <button id="addText">Add "Test" Text Markup</button>
+  <button id="clearMarkups" class="clear">Clear All Markups</button>
+  
+  <div id="status">Activate Markup mode in the viewer toolbar first!</div>
   <pre id="debug">Debug log:\n</pre>
 
   <script>
     let tcApi;
+    let markupIds = [];
 
     function log(msg) {
       const debugEl = document.getElementById('debug');
@@ -48,80 +51,85 @@
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
         log('Connected successfully!');
-        setStatus('Connected - ready to color selected objects', 'success');
+        log('Markup API available: ' + !!tcApi.viewer?.markup);
+        if (tcApi.viewer?.markup) {
+          setStatus('Markup API ready - you can add "Test" markup now!', 'success');
+        } else {
+          setStatus('Markup API not available yet - activate Markup mode in viewer toolbar first', 'error');
+        }
       } catch (err) {
         log('Connection failed: ' + err.message);
         setStatus('Connection failed: ' + err.message, 'error');
       }
     }
 
-    async function getSelectedObjects() {
-      try {
-        const selection = await tcApi.viewer.getSelection();
-        log('Current selection: ' + JSON.stringify(selection));
-        const objects = [];
-        for (const sel of selection) {
-          if (sel.modelId && sel.objectRuntimeIds && sel.objectRuntimeIds.length > 0) {
-            objects.push({ modelId: sel.modelId, objectIds: sel.objectRuntimeIds });
-          }
-        }
-        return objects;
-      } catch (err) {
-        log('getSelection error: ' + err.message);
-        return [];
+    document.getElementById('addText').addEventListener('click', async () => {
+      log('Add "Test" markup clicked');
+      if (!tcApi?.viewer?.markup) {
+        setStatus('Markup API not available - activate Markup tool in viewer first!', 'error');
+        log('Markup API missing');
+        return;
       }
+
+      await clearMarkups(); // Clear previous
+
+      try {
+        const textPos = { x: 0, y: 0, z: 10 }; // Visible position
+        const anchorPos = { x: 0, y: 0, z: 0 };
+
+        const textId = await tcApi.viewer.markup.addTextMarkup({
+          text: "Test",
+          position: textPos,
+          color: { r: 0, g: 0, b: 0 },
+          backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
+          fontSize: 64,
+          padding: 20,
+          borderWidth: 4,
+          borderColor: { r: 255, g: 0, b: 0 }
+        });
+        markupIds.push(textId);
+        log('Text markup added: ' + textId);
+
+        const arrowId = await tcApi.viewer.markup.addArrowMarkup({
+          start: textPos,
+          end: anchorPos,
+          color: { r: 255, g: 0, b: 0 },
+          width: 10
+        });
+        markupIds.push(arrowId);
+        log('Arrow added: ' + arrowId);
+
+        setStatus('Added large "Test" markup near model origin!', 'success');
+      } catch (err) {
+        log('Markup error: ' + (err.message || err));
+        setStatus('Failed to add markup: ' + (err.message || 'Check debug'), 'error');
+      }
+    });
+
+    async function clearMarkups() {
+      if (!tcApi?.viewer?.markup) return;
+      log('Clearing markups...');
+      for (const id of markupIds) {
+        try {
+          await tcApi.viewer.markup.removeMarkup(id);
+          log('Removed: ' + id);
+        } catch (e) {}
+      }
+      markupIds = [];
     }
 
-    document.getElementById('colorRed').addEventListener('click', async () => {
-      log('Color Red button clicked');
-      try {
-        const selected = await getSelectedObjects();
-        if (selected.length === 0) {
-          setStatus('No objects selected in the 3D viewer', 'error');
-          return;
-        }
-
-        // Reset all color overrides first (critical step!)
-        try {
-          await tcApi.viewer.setObjectState([]);
-          log('All color overrides reset');
-        } catch (resetErr) {
-          log('Reset warning (may be normal): ' + resetErr.message);
-        }
-
-        let coloredCount = 0;
-        for (const obj of selected) {
-          try {
-            await tcApi.viewer.setObjectState({
-              modelId: obj.modelId,
-              objectIds: obj.objectIds,
-              color: { r: 255, g: 0, b: 0, a: 255 }
-            });
-            coloredCount += obj.objectIds.length;
-            log(`Colored ${obj.objectIds.length} objects in model ${obj.modelId}`);
-          } catch (e) {
-            log(`Failed on model ${obj.modelId}: ` + e.message);
-          }
-        }
-
-        setStatus(`Successfully colored ${coloredCount} selected object(s) RED!`, 'success');
-      } catch (err) {
-        log('Overall color error: ' + (err.message || err));
-        setStatus('Coloring failed: ' + (err.message || 'Check debug log'), 'error');
-      }
+    document.getElementById('clearMarkups').addEventListener('click', async () => {
+      await clearMarkups();
+      setStatus('All markups cleared', 'success');
     });
 
-    document.getElementById('resetColors').addEventListener('click', async () => {
-      log('Reset Colors clicked');
-      try {
-        await tcApi.viewer.setObjectState([]);
-        log('All color overrides reset');
-        setStatus('All object colors reset to default', 'success');
-      } catch (err) {
-        log('Reset error: ' + err.message);
-        setStatus('Reset failed: ' + err.message, 'error');
+    // Check markup availability periodically
+    setInterval(() => {
+      if (tcApi?.viewer?.markup && document.getElementById('status').className === 'error') {
+        log('Markup API became available!');
+        setStatus('Markup API ready now - try adding markup!', 'success');
       }
-    });
+    }, 2000);
 
     window.addEventListener('load', init);
   </script>
