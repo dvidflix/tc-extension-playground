@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Test Markup & Color</title>
+  <title>Simple Cloud Markup & Color</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
     button { padding: 12px 20px; margin: 10px; font-size: 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button.clear { background: #d13438; }
+    button.red { background: #d13438; }
     #status { margin: 20px; font-size: 16px; }
     .success { color: green; }
     .error { color: red; }
@@ -16,16 +16,16 @@
   </style>
 </head>
 <body>
-  <h2>Simple Test Tools</h2>
+  <h2>Simple Tools (Cloud Markup + Color)</h2>
+  <button id="addMarkup">Add Cloud "Test" Markup to Selected</button>
   <button id="colorRed">Color Selected Red</button>
-  <button id="addMarkup">Add "Test" Markup (Activate Markup Tool First!)</button>
-  <button id="clear" class="clear">Clear Markups</button>
-  <div id="status">Activate Markup tool in viewer toolbar for markup button.</div>
+  <button id="clear" class="red">Clear Markup</button>
+  <div id="status"></div>
   <pre id="debug">Debug log:\n</pre>
 
   <script>
     let tcApi;
-    let markupIds = [];
+    let lastMarkupId;
 
     function log(msg) {
       const el = document.getElementById('debug');
@@ -39,28 +39,58 @@
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
         log('Connected!');
-        log('tcApi.markup available: ' + !!tcApi.markup);
-        log('tcApi.viewer.markup available: ' + !!tcApi.viewer?.markup);
-        document.getElementById('status').textContent = 'Connected. For markup, activate Markup tool (pencil) in viewer toolbar.';
+        log('Cloud markup API: ' + !!tcApi.markup);
+        document.getElementById('status').textContent = 'Ready - select object and try buttons';
+        document.getElementById('status').className = 'success';
       } catch (err) {
         log('Error: ' + err.message);
       }
     }
 
-    // Color button - reliable method
-    document.getElementById('colorRed').addEventListener('click', async () => {
-      log('Color red clicked');
+    document.getElementById('addMarkup').addEventListener('click', async () => {
+      log('Add cloud markup clicked');
+      if (!tcApi?.markup) {
+        document.getElementById('status').textContent = 'Cloud markup API not available';
+        return;
+      }
+
       try {
         const selection = await tcApi.viewer.getSelection();
         if (selection.length === 0) {
-          document.getElementById('status').textContent = 'Select object(s) first';
+          document.getElementById('status').textContent = 'Select an object first';
           return;
         }
 
-        // Reset overrides
-        await tcApi.viewer.setObjectState([]);
-        log('Overrides reset');
+        const sel = selection[0];
+        const modelId = sel.modelId;
+        const objectId = sel.objectRuntimeIds[0];
 
+        // Fixed position (adjust z for visibility)
+        const position = { x: 0, y: 0, z: 10000 }; // in mm
+
+        const markup = {
+          type: 'text',
+          text: 'Test',
+          position: position,
+          attachedTo: { modelId, objectId }  // Attaches with leader
+        };
+
+        const result = await tcApi.markup.addCloudMarkups([markup]);  // or addMarkups if method name varies
+        lastMarkupId = result[0].id;
+
+        document.getElementById('status').textContent = 'Cloud "Test" markup added & attached!';
+        document.getElementById('status').className = 'success';
+      } catch (err) {
+        log('Markup error: ' + err.message);
+        document.getElementById('status').textContent = 'Markup failed (check log)';
+      }
+    });
+
+    document.getElementById('colorRed').addEventListener('click', async () => {
+      log('Color clicked');
+      try {
+        await tcApi.viewer.setObjectState([]); // Reset
+        const selection = await tcApi.viewer.getSelection();
         for (const sel of selection) {
           await tcApi.viewer.setObjectState({
             modelId: sel.modelId,
@@ -68,55 +98,19 @@
             color: { r: 255, g: 0, b: 0, a: 255 }
           });
         }
-
-        document.getElementById('status').textContent = 'Selected objects colored red!';
+        document.getElementById('status').textContent = 'Colored red!';
         document.getElementById('status').className = 'success';
       } catch (err) {
         log('Color error: ' + err.message);
-        document.getElementById('status').textContent = 'Color failed: ' + err.message;
-      }
-    });
-
-    // Markup button - uses conditional viewer.markup when available
-    document.getElementById('addMarkup').addEventListener('click', async () => {
-      log('Markup clicked');
-      if (!tcApi.viewer?.markup) {
-        document.getElementById('status').textContent = 'Markup API not available - activate Markup tool in viewer toolbar!';
-        document.getElementById('status').className = 'error';
-        return;
-      }
-
-      try {
-        const pos = { x: 0, y: 0, z: 10 };
-
-        const textId = await tcApi.viewer.markup.addTextMarkup({
-          text: "Test",
-          position: pos,
-          color: { r: 0, g: 0, b: 0 },
-          backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
-          fontSize: 64,
-          padding: 20,
-          borderWidth: 4,
-          borderColor: { r: 255, g: 0, b: 0 }
-        });
-        markupIds.push(textId);
-
-        document.getElementById('status').textContent = '"Test" markup added!';
-        document.getElementById('status').className = 'success';
-      } catch (err) {
-        log('Markup error: ' + err.message);
-        document.getElementById('status').textContent = 'Markup failed: ' + err.message;
+        document.getElementById('status').textContent = 'Color failed (undefined common)';
       }
     });
 
     document.getElementById('clear').addEventListener('click', async () => {
-      if (tcApi.viewer?.markup) {
-        for (const id of markupIds) {
-          await tcApi.viewer.markup.removeMarkup(id).catch(() => {});
-        }
+      if (lastMarkupId && tcApi?.markup) {
+        await tcApi.markup.removeMarkups([lastMarkupId]);
       }
-      markupIds = [];
-      document.getElementById('status').textContent = 'Markups cleared';
+      document.getElementById('status').textContent = 'Cleared';
     });
 
     window.addEventListener('load', init);
