@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Markup - Fixed No Bounds Version</title>
+  <title>Simple Test Markup & Color</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
@@ -12,88 +12,112 @@
     #status { margin: 20px; font-size: 16px; }
     .success { color: green; }
     .error { color: red; }
+    #debug { margin: 20px; padding: 10px; background: #fff; border: 1px solid #ccc; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; }
   </style>
 </head>
 <body>
-  <h2>Test Markup Extension (No Bounds Needed)</h2>
-  <button id="addMarkup">Add "Test" Markup to Selected Object</button>
-  <button id="clear" class="clear">Clear Previous Markup</button>
-  <div id="status">Select an object, then click the button. No bounds needed - uses fixed offset.</div>
+  <h2>Simple Test Tools</h2>
+  <button id="colorRed">Color Selected Red</button>
+  <button id="addMarkup">Add "Test" Markup (Activate Markup Tool First!)</button>
+  <button id="clear" class="clear">Clear Markups</button>
+  <div id="status">Activate Markup tool in viewer toolbar for markup button.</div>
+  <pre id="debug">Debug log:\n</pre>
 
   <script>
     let tcApi;
-    let previousMarkupIds = [];
+    let markupIds = [];
+
+    function log(msg) {
+      const el = document.getElementById('debug');
+      const time = new Date().toLocaleTimeString();
+      el.textContent += `[${time}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
 
     async function init() {
+      log('Connecting...');
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
-        document.getElementById('status').textContent = 'Connected successfully!';
-        document.getElementById('status').className = 'success';
+        log('Connected!');
+        log('tcApi.markup available: ' + !!tcApi.markup);
+        log('tcApi.viewer.markup available: ' + !!tcApi.viewer?.markup);
+        document.getElementById('status').textContent = 'Connected. For markup, activate Markup tool (pencil) in viewer toolbar.';
       } catch (err) {
-        document.getElementById('status').textContent = 'Connection failed: ' + err.message;
-        document.getElementById('status').className = 'error';
+        log('Error: ' + err.message);
       }
     }
 
-    async function clearPrevious() {
-      if (!tcApi?.markup || previousMarkupIds.length === 0) return;
+    // Color button - reliable method
+    document.getElementById('colorRed').addEventListener('click', async () => {
+      log('Color red clicked');
       try {
-        await tcApi.markup.removeMarkups(previousMarkupIds);
-        previousMarkupIds = [];
-      } catch (e) {}
-    }
+        const selection = await tcApi.viewer.getSelection();
+        if (selection.length === 0) {
+          document.getElementById('status').textContent = 'Select object(s) first';
+          return;
+        }
 
+        // Reset overrides
+        await tcApi.viewer.setObjectState([]);
+        log('Overrides reset');
+
+        for (const sel of selection) {
+          await tcApi.viewer.setObjectState({
+            modelId: sel.modelId,
+            objectIds: sel.objectRuntimeIds,
+            color: { r: 255, g: 0, b: 0, a: 255 }
+          });
+        }
+
+        document.getElementById('status').textContent = 'Selected objects colored red!';
+        document.getElementById('status').className = 'success';
+      } catch (err) {
+        log('Color error: ' + err.message);
+        document.getElementById('status').textContent = 'Color failed: ' + err.message;
+      }
+    });
+
+    // Markup button - uses conditional viewer.markup when available
     document.getElementById('addMarkup').addEventListener('click', async () => {
-      await clearPrevious();
-
-      if (!tcApi?.markup) {
-        document.getElementById('status').textContent = 'Markup API not available';
+      log('Markup clicked');
+      if (!tcApi.viewer?.markup) {
+        document.getElementById('status').textContent = 'Markup API not available - activate Markup tool in viewer toolbar!';
         document.getElementById('status').className = 'error';
         return;
       }
 
       try {
-        const selection = await tcApi.viewer.getSelection();
-        if (selection.length === 0) {
-          document.getElementById('status').textContent = 'Please select an object first';
-          document.getElementById('status').className = 'error';
-          return;
-        }
+        const pos = { x: 0, y: 0, z: 10 };
 
-        const sel = selection[0];
-        const modelId = sel.modelId;
-        const runtimeIds = sel.objectRuntimeIds;
-        if (runtimeIds.length === 0) throw new Error('No runtime IDs');
-
-        const objectId = runtimeIds[0];
-
-        // Fixed position in millimeters (visible offset - adjust if needed)
-        const positionMM = { x: 0, y: 0, z: 5000 }; // 5 meters above origin
-
-        const textMarkup = {
+        const textId = await tcApi.viewer.markup.addTextMarkup({
           text: "Test",
-          start: {
-            type: "point",
-            position: positionMM,
-            modelId: modelId,
-            objectId: objectId  // Attached to object
-          }
-        };
+          position: pos,
+          color: { r: 0, g: 0, b: 0 },
+          backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
+          fontSize: 64,
+          padding: 20,
+          borderWidth: 4,
+          borderColor: { r: 255, g: 0, b: 0 }
+        });
+        markupIds.push(textId);
 
-        const created = await tcApi.markup.addTextMarkups([textMarkup]);
-        previousMarkupIds = created.map(m => m.id);
-
-        document.getElementById('status').textContent = 'Success! "Test" markup added (attached, visible near origin)';
+        document.getElementById('status').textContent = '"Test" markup added!';
         document.getElementById('status').className = 'success';
-
-        await tcApi.viewer.zoomTo({ modelObjectIds: selection });
       } catch (err) {
-        document.getElementById('status').textContent = 'Error: ' + (err.message || err);
-        document.getElementById('status').className = 'error';
+        log('Markup error: ' + err.message);
+        document.getElementById('status').textContent = 'Markup failed: ' + err.message;
       }
     });
 
-    document.getElementById('clear').addEventListener('click', clearPrevious);
+    document.getElementById('clear').addEventListener('click', async () => {
+      if (tcApi.viewer?.markup) {
+        for (const id of markupIds) {
+          await tcApi.viewer.markup.removeMarkup(id).catch(() => {});
+        }
+      }
+      markupIds = [];
+      document.getElementById('status').textContent = 'Markups cleared';
+    });
 
     window.addEventListener('load', init);
   </script>
