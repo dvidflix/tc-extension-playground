@@ -3,61 +3,57 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Cloud Markup & Color</title>
+  <title>Markup & Color from Videos</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
     button { padding: 12px 20px; margin: 10px; font-size: 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button.red { background: #d13438; }
+    button.clear { background: #d13438; }
     #status { margin: 20px; font-size: 16px; }
     .success { color: green; }
     .error { color: red; }
-    #debug { margin: 20px; padding: 10px; background: #fff; border: 1px solid #ccc; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; }
   </style>
 </head>
 <body>
-  <h2>Simple Tools (Cloud Markup + Color)</h2>
-  <button id="addMarkup">Add Cloud "Test" Markup to Selected</button>
+  <h2>Markup & Color (Recreated from Videos)</h2>
+  <button id="addMarkup">Add "Test" Attached Markup</button>
   <button id="colorRed">Color Selected Red</button>
-  <button id="clear" class="red">Clear Markup</button>
-  <div id="status"></div>
-  <pre id="debug">Debug log:\n</pre>
+  <button id="clear" class="clear">Clear Markup</button>
+  <div id="status">Select object(s), then click buttons.</div>
 
   <script>
     let tcApi;
-    let lastMarkupId;
-
-    function log(msg) {
-      const el = document.getElementById('debug');
-      const time = new Date().toLocaleTimeString();
-      el.textContent += `[${time}] ${msg}\n`;
-      el.scrollTop = el.scrollHeight;
-    }
+    let lastMarkupIds = [];
 
     async function init() {
-      log('Connecting...');
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
-        log('Connected!');
-        log('Cloud markup API: ' + !!tcApi.markup);
-        document.getElementById('status').textContent = 'Ready - select object and try buttons';
+        document.getElementById('status').textContent = 'Connected - select object and try!';
         document.getElementById('status').className = 'success';
       } catch (err) {
-        log('Error: ' + err.message);
+        document.getElementById('status').textContent = 'Error: ' + err.message;
+        document.getElementById('status').className = 'error';
+      }
+    }
+
+    async function clearMarkup() {
+      if (tcApi?.markup && lastMarkupIds.length > 0) {
+        await tcApi.markup.removeMarkups(lastMarkupIds);
+        lastMarkupIds = [];
       }
     }
 
     document.getElementById('addMarkup').addEventListener('click', async () => {
-      log('Add cloud markup clicked');
+      await clearMarkup();
       if (!tcApi?.markup) {
-        document.getElementById('status').textContent = 'Cloud markup API not available';
+        document.getElementById('status').textContent = 'Markup API missing';
         return;
       }
 
       try {
         const selection = await tcApi.viewer.getSelection();
         if (selection.length === 0) {
-          document.getElementById('status').textContent = 'Select an object first';
+          document.getElementById('status').textContent = 'Select an object';
           return;
         }
 
@@ -65,31 +61,29 @@
         const modelId = sel.modelId;
         const objectId = sel.objectRuntimeIds[0];
 
-        // Fixed position (adjust z for visibility)
-        const position = { x: 0, y: 0, z: 10000 }; // in mm
+        // Fixed position in mm (adjust for visibility)
+        const position = { x: 0, y: 0, z: 10000 }; // 10 meters up
 
         const markup = {
-          type: 'text',
           text: 'Test',
           position: position,
-          attachedTo: { modelId, objectId }  // Attaches with leader
+          attachedTo: { modelId, objectId }  // From video: attaches with leader
         };
 
-        const result = await tcApi.markup.addCloudMarkups([markup]);  // or addMarkups if method name varies
-        lastMarkupId = result[0].id;
+        const created = await tcApi.markup.addTextMarkups([markup]);  // Plural from docs/video
+        lastMarkupIds = created.map(m => m.id);
 
-        document.getElementById('status').textContent = 'Cloud "Test" markup added & attached!';
+        document.getElementById('status').textContent = '"Test" attached markup added!';
         document.getElementById('status').className = 'success';
       } catch (err) {
-        log('Markup error: ' + err.message);
-        document.getElementById('status').textContent = 'Markup failed (check log)';
+        document.getElementById('status').textContent = 'Markup error: ' + err.message;
+        document.getElementById('status').className = 'error';
       }
     });
 
     document.getElementById('colorRed').addEventListener('click', async () => {
-      log('Color clicked');
       try {
-        await tcApi.viewer.setObjectState([]); // Reset
+        await tcApi.viewer.setObjectState([]); // Reset from video pattern
         const selection = await tcApi.viewer.getSelection();
         for (const sel of selection) {
           await tcApi.viewer.setObjectState({
@@ -101,17 +95,11 @@
         document.getElementById('status').textContent = 'Colored red!';
         document.getElementById('status').className = 'success';
       } catch (err) {
-        log('Color error: ' + err.message);
-        document.getElementById('status').textContent = 'Color failed (undefined common)';
+        document.getElementById('status').textContent = 'Color error: ' + err.message;
       }
     });
 
-    document.getElementById('clear').addEventListener('click', async () => {
-      if (lastMarkupId && tcApi?.markup) {
-        await tcApi.markup.removeMarkups([lastMarkupId]);
-      }
-      document.getElementById('status').textContent = 'Cleared';
-    });
+    document.getElementById('clear').addEventListener('click', clearMarkup);
 
     window.addEventListener('load', init);
   </script>
