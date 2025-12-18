@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Markup - Reliable Attached Version</title>
+  <title>Test Markup - Fixed No Bounds Version</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
@@ -15,10 +15,10 @@
   </style>
 </head>
 <body>
-  <h2>Test Markup Extension (Reliable - Attached to Object)</h2>
+  <h2>Test Markup Extension (No Bounds Needed)</h2>
   <button id="addMarkup">Add "Test" Markup to Selected Object</button>
   <button id="clear" class="clear">Clear Previous Markup</button>
-  <div id="status">Select one object in the viewer, then click the button.</div>
+  <div id="status">Select an object, then click the button. No bounds needed - uses fixed offset.</div>
 
   <script>
     let tcApi;
@@ -27,7 +27,7 @@
     async function init() {
       try {
         tcApi = await TrimbleConnectWorkspace.connect(window.parent);
-        document.getElementById('status').textContent = 'Connected successfully - ready!';
+        document.getElementById('status').textContent = 'Connected successfully!';
         document.getElementById('status').className = 'success';
       } catch (err) {
         document.getElementById('status').textContent = 'Connection failed: ' + err.message;
@@ -40,16 +40,14 @@
       try {
         await tcApi.markup.removeMarkups(previousMarkupIds);
         previousMarkupIds = [];
-      } catch (e) {
-        console.warn('Clear error:', e);
-      }
+      } catch (e) {}
     }
 
     document.getElementById('addMarkup').addEventListener('click', async () => {
       await clearPrevious();
 
       if (!tcApi?.markup) {
-        document.getElementById('status').textContent = 'Markup API not available (tcApi.markup missing)';
+        document.getElementById('status').textContent = 'Markup API not available';
         document.getElementById('status').className = 'error';
         return;
       }
@@ -57,55 +55,37 @@
       try {
         const selection = await tcApi.viewer.getSelection();
         if (selection.length === 0) {
-          document.getElementById('status').textContent = 'Please select one object first';
+          document.getElementById('status').textContent = 'Please select an object first';
           document.getElementById('status').className = 'error';
           return;
         }
 
-        // Use the first selected object (for simplicity)
         const sel = selection[0];
         const modelId = sel.modelId;
         const runtimeIds = sel.objectRuntimeIds;
         if (runtimeIds.length === 0) throw new Error('No runtime IDs');
 
-        const objectId = runtimeIds[0]; // Attach to first object in group
+        const objectId = runtimeIds[0];
 
-        // Get bounding box (returns array)
-        const boundsArray = await tcApi.viewer.getObjectBounds(modelId, runtimeIds);
-        if (!boundsArray || boundsArray.length === 0) throw new Error('No bounds found');
-
-        const bounds = boundsArray[0]; // First object's bounds
-        const midpoint = {
-          x: (bounds.min.x + bounds.max.x) / 2,
-          y: (bounds.min.y + bounds.max.y) / 2,
-          z: (bounds.min.z + bounds.max.z) / 2 + 0.5  // Slightly above
-        };
-
-        // Critical: Convert meters to millimeters (*1000)
-        const positionMM = {
-          x: midpoint.x * 1000,
-          y: midpoint.y * 1000,
-          z: midpoint.z * 1000
-        };
+        // Fixed position in millimeters (visible offset - adjust if needed)
+        const positionMM = { x: 0, y: 0, z: 5000 }; // 5 meters above origin
 
         const textMarkup = {
           text: "Test",
           start: {
-            type: "point",  // or pickType: 'point'
+            type: "point",
             position: positionMM,
             modelId: modelId,
-            objectId: objectId
+            objectId: objectId  // Attached to object
           }
-          // end can be same as start for simple text label
         };
 
         const created = await tcApi.markup.addTextMarkups([textMarkup]);
         previousMarkupIds = created.map(m => m.id);
 
-        document.getElementById('status').textContent = 'Success! "Test" markup attached to selected object.';
+        document.getElementById('status').textContent = 'Success! "Test" markup added (attached, visible near origin)';
         document.getElementById('status').className = 'success';
 
-        // Optional: Zoom to it
         await tcApi.viewer.zoomTo({ modelObjectIds: selection });
       } catch (err) {
         document.getElementById('status').textContent = 'Error: ' + (err.message || err);
