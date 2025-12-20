@@ -1,23 +1,22 @@
-let API;
-const viewerFrame = document.getElementById('viewerFrame');
+let API = null;
+const statusEl = document.getElementById('status');
 
-async function initViewer() {
-  // Replace with your own tokens / project if needed
-  const url = `${window.location.origin}?isEmbedded=true`;
+async function initExtension() {
+  try {
+    // In extension mode: connect to the parent window (the 3D Viewer)
+    API = await TrimbleConnectWorkspace.connect(window.parent);
 
-  viewerFrame.src = url;
-  viewerFrame.onload = async () => {
-    API = await TrimbleConnectWorkspace.connect(viewerFrame.contentWindow);
-
-    // Optional: set tokens if running outside of Connect
-    // await API.embed.setTokens({ accessToken: "...", shareToken: "..." });
-    // await API.embed.init3DViewer({ projectId: "your-project-id" });
-
-    console.log("Trimble Connect API ready");
-  };
+    statusEl.textContent = "Connected to Trimble Connect 3D Viewer";
+    statusEl.className = "text-success";
+    console.log("API ready:", API);
+  } catch (err) {
+    statusEl.textContent = "Connection failed: " + err.message;
+    statusEl.className = "text-danger";
+    console.error(err);
+  }
 }
 
-// Helper: generate random color
+// Helper: random color
 function randomColor() {
   const r = Math.floor(Math.random() * 256);
   const g = Math.floor(Math.random() * 256);
@@ -25,44 +24,34 @@ function randomColor() {
   return { r, g, b };
 }
 
-// Map to cache color per Serial number
 const serialColorMap = new Map();
 
-/* ============== FUNCTION 1: Color by Serial number ============== */
+/* Function 1: Color by Serial Number */
 async function colorBySerialNumber() {
-  if (!API) return alert("Viewer not ready");
+  if (!API) return alert("Not connected to viewer");
 
   const selection = await API.viewer.getSelection();
   if (!selection || selection.length === 0) {
-    alert("Please select some rebar objects first");
-    return;
+    return alert("Please select some rebar objects first");
   }
 
   const objects = await API.viewer.getObjects({ selected: true });
 
   for (const model of objects) {
     for (const obj of model.objects) {
-      // Get properties of this object
-      const props = obj.properties || {};
-      const propertySets = props.propertySets || [];
-
-      let serialNumber = null;
+      const propertySets = obj.properties?.propertySets || [];
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      if (rebarSet) {
-        const snProp = rebarSet.properties.find(p => p.name === "Serial number");
-        if (snProp) serialNumber = snProp.value;
-      }
+      const snProp = rebarSet?.properties?.find(p => p.name === "Serial Number");
 
-      if (!serialNumber) continue; // skip if no Serial number
+      if (!snProp?.value) continue;
 
-      // Get or create random color for this Serial number
+      const serialNumber = snProp.value;
       let color = serialColorMap.get(serialNumber);
       if (!color) {
         color = randomColor();
         serialColorMap.set(serialNumber, color);
       }
 
-      // Apply color to this single object
       await API.viewer.setObjectState(
         {
           modelObjectIds: [{
@@ -75,61 +64,51 @@ async function colorBySerialNumber() {
     }
   }
 
-  alert("Selected rebars colored by Serial number");
+  alert("Colored selected rebars by Serial Number");
 }
 
-/* ============== FUNCTION 2: Add Text Markups with Serial number ============== */
+/* Function 2: Add Text Markups */
 async function addSerialNumberMarkups() {
-  if (!API) return alert("Viewer not ready");
+  if (!API) return alert("Not connected to viewer");
 
   const selection = await API.viewer.getSelection();
   if (!selection || selection.length === 0) {
-    alert("Please select some rebar objects first");
-    return;
+    return alert("Please select some rebar objects first");
   }
 
   const objects = await API.viewer.getObjects({ selected: true });
-
   const textMarkups = [];
 
   for (const model of objects) {
     for (const obj of model.objects) {
-      const props = obj.properties || {};
-      const propertySets = props.propertySets || [];
-
-      let serialNumber = null;
+      const propertySets = obj.properties?.propertySets || [];
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      if (rebarSet) {
-        const snProp = rebarSet.properties.find(p => p.name === "Serial number");
-        if (snProp) serialNumber = snProp.value;
-      }
+      const snProp = rebarSet?.properties?.find(p => p.name === "Serial Number");
 
-      if (!serialNumber) continue;
+      if (!snProp?.value) continue;
 
-      // Use the object's bounding box center as markup position
       const center = obj.boundingBox?.center;
       if (!center) continue;
 
       textMarkups.push({
-        text: serialNumber.toString(),
-        position: { x: center.x, y: center.y + 1, z: center.z }, // slightly above
-        color: { r: 255, g: 255, b: 0 }, // yellow text
+        text: snProp.value.toString(),
+        position: { x: center.x, y: center.y + 1, z: center.z }, // offset slightly up
+        color: { r: 255, g: 255, b: 0 }, // yellow
         fontSize: 30,
-        backgroundColor: { r: 0, g: 0, b: 0, a: 150 } // semi-transparent black background
+        backgroundColor: { r: 0, g: 0, b: 0, a: 150 }
       });
     }
   }
 
   if (textMarkups.length === 0) {
-    alert("No Serial number found in selected objects");
-    return;
+    return alert("No Serial Number found in selected objects");
   }
 
   await API.markup.addTextMarkup(textMarkups);
-  alert(`Added ${textMarkups.length} text markups with Serial numbers`);
+  alert(`Added ${textMarkups.length} text markups`);
 }
 
-/* ============== Helper functions ============== */
+/* Helpers */
 async function resetColors() {
   if (!API) return;
   await API.viewer.setObjectState(undefined, { color: "reset" });
@@ -143,5 +122,5 @@ async function removeMarkups() {
   alert("All markups removed");
 }
 
-// Start the viewer when page loads
-window.onload = initViewer;
+// Start connection when page loads
+window.onload = initExtension;
