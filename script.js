@@ -1,4 +1,5 @@
-let API = null;
+let workspaceApi = null;  // Full WorkspaceAPI instance
+let viewer = null;        // Shortcut to viewer API
 const statusEl = document.getElementById('status');
 
 const TARGET_PROPERTY_SET = "ICOS Rebar";
@@ -6,12 +7,14 @@ const TARGET_PROPERTY_NAME = "Serial number";
 
 async function initExtension() {
   try {
-    API = await TrimbleConnectWorkspace.connect(window.parent);
+    // Modern connection (for extensions loaded in side panel – uses window.parent)
+    workspaceApi = await WorkspaceAPI.connect(window.parent);
+    viewer = workspaceApi.viewer;  // viewer API
     statusEl.textContent = "Connected – Ready to use!";
     statusEl.className = "text-success";
-    console.log("Trimble Connect API connected");
+    console.log("Trimble Connect Workspace API connected");
   } catch (error) {
-    statusEl.textContent = "Connection failed";
+    statusEl.textContent = "Connection failed: " + error.message;
     statusEl.className = "text-danger";
     console.error(error);
   }
@@ -28,13 +31,13 @@ function randomColor() {
 const serialColorMap = new Map();
 
 async function colorBySerialNumber() {
-  if (!API) return alert("Not connected");
+  if (!viewer) return alert("Not connected");
 
-  const selection = await API.viewer.getSelection();
+  const selection = await viewer.getSelection();
   if (!selection?.length) return alert("Please select rebar objects first");
 
-  // Step 1: Get basic selected objects (to extract modelId + runtimeIds)
-  const basicObjects = await API.viewer.getObjects({ selected: true });
+  // Get basic selected objects
+  const basicObjects = await viewer.getObjects({ selected: true });
 
   let totalProcessed = 0;
 
@@ -42,8 +45,8 @@ async function colorBySerialNumber() {
     const runtimeIds = model.objects.map(obj => obj.id);
     if (runtimeIds.length === 0) continue;
 
-    // Step 2: Fetch full properties for these objects
-    const fullObjects = await API.viewer.getObjectProperties({
+    // Fetch full properties
+    const fullObjects = await viewer.getObjectProperties({
       modelId: model.modelId,
       objectRuntimeIds: runtimeIds
     });
@@ -63,8 +66,8 @@ async function colorBySerialNumber() {
         serialColorMap.set(serial, color);
       }
 
-      // Apply color to this single object
-      await API.viewer.setObjectState(
+      // Apply color to single object
+      await viewer.setObjectState(
         {
           modelObjectIds: [{
             modelId: model.modelId,
@@ -86,12 +89,12 @@ async function colorBySerialNumber() {
 }
 
 async function addSerialNumberMarkups() {
-  if (!API) return alert("Not connected");
+  if (!viewer) return alert("Not connected");
 
-  const selection = await API.viewer.getSelection();
+  const selection = await viewer.getSelection();
   if (!selection?.length) return alert("Please select rebar objects first");
 
-  const basicObjects = await API.viewer.getObjects({ selected: true });
+  const basicObjects = await viewer.getObjects({ selected: true });
 
   const markups = [];
   let count = 0;
@@ -100,7 +103,7 @@ async function addSerialNumberMarkups() {
     const runtimeIds = model.objects.map(obj => obj.id);
     if (runtimeIds.length === 0) continue;
 
-    const fullObjects = await API.viewer.getObjectProperties({
+    const fullObjects = await viewer.getObjectProperties({
       modelId: model.modelId,
       objectRuntimeIds: runtimeIds
     });
@@ -133,10 +136,29 @@ async function addSerialNumberMarkups() {
     return;
   }
 
-  await API.markup.addTextMarkup(markups);
+  // Assuming markup API is available on workspaceApi (common in viewer extensions)
+  if (!workspaceApi.markup) {
+    alert("Markup API not available in this context");
+    return;
+  }
+
+  await workspaceApi.markup.addTextMarkup(markups);
   alert(`Added ${count} serial number markup(s)`);
 }
 
 async function resetColors() {
-  if (!API) return;
-  await API.viewer.setObjectState(undefined, { color: "
+  if (!viewer) return alert("Not connected");
+
+  try {
+    // Reset all colors globally
+    await viewer.setObjectState(undefined, { color: { reset: true } });
+    serialColorMap.clear();
+    alert("All colors reset successfully");
+  } catch (error) {
+    console.error(error);
+    alert("Failed to reset colors");
+  }
+}
+
+// Call init on load
+initExtension();
