@@ -25,10 +25,10 @@ function randomColor() {
   return { r, g, b };
 }
 
-// Map to cache color per serial number
+// Map to cache color per Serial number
 const serialColorMap = new Map();
 
-/* ============== FUNCTION 1: Color by Serial Number ============== */
+/* ============== FUNCTION 1: Color by Serial number ============== */
 async function colorBySerialNumber() {
   if (!API) return alert("Viewer not ready");
 
@@ -49,13 +49,13 @@ async function colorBySerialNumber() {
       let serialNumber = null;
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
       if (rebarSet) {
-        const snProp = rebarSet.properties.find(p => p.name === "Serial Number");
+        const snProp = rebarSet.properties.find(p => p.name === "Serial number");
         if (snProp) serialNumber = snProp.value;
       }
 
-      if (!serialNumber) continue; // skip if no serial number
+      if (!serialNumber) continue; // skip if no Serial number
 
-      // Get or create random color for this serial number
+      // Get or create random color for this Serial number
       let color = serialColorMap.get(serialNumber);
       if (!color) {
         color = randomColor();
@@ -75,10 +75,10 @@ async function colorBySerialNumber() {
     }
   }
 
-  alert("Selected rebars colored by Serial Number");
+  alert("Selected rebars colored by Serial number");
 }
 
-/* ============== FUNCTION 2: Add Text Markups with Serial Number ============== */
+/* ============== FUNCTION 2: Add Text Markups with Serial number ============== */
 async function addSerialNumberMarkups() {
   if (!API) return alert("Viewer not ready");
 
@@ -100,7 +100,7 @@ async function addSerialNumberMarkups() {
       let serialNumber = null;
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
       if (rebarSet) {
-        const snProp = rebarSet.properties.find(p => p.name === "Serial Number");
+        const snProp = rebarSet.properties.find(p => p.name === "Serial number");
         if (snProp) serialNumber = snProp.value;
       }
 
@@ -121,12 +121,12 @@ async function addSerialNumberMarkups() {
   }
 
   if (textMarkups.length === 0) {
-    alert("No Serial Number found in selected objects");
+    alert("No Serial number found in selected objects");
     return;
   }
 
   await API.markup.addTextMarkup(textMarkups);
-  alert(`Added ${textMarkups.length} text markups with Serial Numbers`);
+  alert(`Added ${textMarkups.length} text markups with Serial numbers`);
 }
 
 /* ============== Helper functions ============== */
