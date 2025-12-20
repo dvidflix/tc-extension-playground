@@ -26,7 +26,7 @@ function randomColor() {
 
 const serialColorMap = new Map();
 
-/* Function 1: Color by Serial Number */
+/* Function 1: Color by Serial number */
 async function colorBySerialNumber() {
   if (!API) return alert("Not connected to viewer");
 
@@ -41,7 +41,7 @@ async function colorBySerialNumber() {
     for (const obj of model.objects) {
       const propertySets = obj.properties?.propertySets || [];
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      const snProp = rebarSet?.properties?.find(p => p.name === "Serial Number");
+      const snProp = rebarSet?.properties?.find(p => p.name === "Serial number");
 
       if (!snProp?.value) continue;
 
@@ -64,7 +64,7 @@ async function colorBySerialNumber() {
     }
   }
 
-  alert("Colored selected rebars by Serial Number");
+  alert("Colored selected rebars by Serial number");
 }
 
 /* Function 2: Add Text Markups */
@@ -83,7 +83,7 @@ async function addSerialNumberMarkups() {
     for (const obj of model.objects) {
       const propertySets = obj.properties?.propertySets || [];
       const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      const snProp = rebarSet?.properties?.find(p => p.name === "Serial Number");
+      const snProp = rebarSet?.properties?.find(p => p.name === "Serial number");
 
       if (!snProp?.value) continue;
 
@@ -101,7 +101,7 @@ async function addSerialNumberMarkups() {
   }
 
   if (textMarkups.length === 0) {
-    return alert("No Serial Number found in selected objects");
+    return alert("No Serial number found in selected objects");
   }
 
   await API.markup.addTextMarkup(textMarkups);
