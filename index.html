@@ -68,15 +68,21 @@
 
     async function initExtension() {
       try {
-        // Correct for side panel custom extensions in 3D Viewer: connect to parent window
-        workspaceApi = await WorkspaceAPI.connect(window.parent);
+        // The global object exposed by the script is TrimbleConnectWorkspace
+        // For side panel extensions in 3D Viewer, connect to window.parent with event handler
+        workspaceApi = await TrimbleConnectWorkspace.connect(
+          window.parent,
+          (event, data) => {
+            console.log("Received event from viewer:", event, data);
+          }
+        );
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use! (Test Mode)";
         statusEl.className = "text-success";
         console.log("Trimble Connect Workspace API connected successfully");
       } catch (error) {
-        statusEl.textContent = "Connection failed: " + (error?.message || error || "Check console");
+        statusEl.textContent = "Connection failed: " + (error?.message || error || "Unknown");
         statusEl.className = "text-danger";
         console.error("Connection error:", error);
       }
