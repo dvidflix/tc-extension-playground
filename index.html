@@ -6,7 +6,7 @@
   <title>Rebar Serial Number Tools</title>
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-  <!-- Official Trimble Connect Workspace API CDN -->
+  <!-- Official Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body {
@@ -38,8 +38,11 @@
   <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
+    <button class="btn btn-info btn-lg btn-block" onclick="debugProperties()">
+      Debug Selected Properties (Open Console F12)
+    </button>
     <button class="btn btn-primary btn-lg btn-block" onclick="colorBySerialNumber()">
-      Color by Serial Number
+      Color by Serial Number / Mark
     </button>
     <button class="btn btn-success btn-lg btn-block" onclick="addSerialNumberMarkups()">
       Add Serial Number Text Markups
@@ -55,10 +58,12 @@
   <div class="info mt-4">
     <p><strong>How to use:</strong></p>
     <ol>
-      <li>Select one or more rebar objects in the 3D view (works with IFC-rebar that has the "ICOS Rebar" property set).</li>
-      <li>Click a button above.</li>
+      <li>Select one or more rebar objects in the 3D view.</li>
+      <li>First, click <strong>Debug Selected Properties</strong> and check the browser console (F12) to see available property sets and names.</li>
+      <li>Update the TARGET_PSET and TARGET_PROP variables in the script if needed (common: "Tekla Reinforcement - Bending List" and "Group position number").</li>
+      <li>Then use the other buttons.</li>
     </ol>
-    <p>Rebars with the same <em>Serial number</em> (from the "ICOS Rebar" property set) will get the same random color and text label.</p>
+    <p>Rebars with the same serial/mark will get the same random color and text label.</p>
   </div>
 
   <script>
@@ -67,22 +72,31 @@
     let markup = null;
     const statusEl = document.getElementById('status');
 
-    const TARGET_PSET = "ICOS Rebar";
-    const TARGET_PROP = "Serial number";
+    // === CONFIGURE THESE BASED ON YOUR MODEL ===
+    // Common for Tekla-exported rebar IFC:
+    let TARGET_PSET = "Tekla Reinforcement - Bending List";  
+    let TARGET_PROP = "Group position number";  // Alternatives: "Rebar mark", "Serial number", "Pos_No"
+
+    // Fallback alternatives if the primary is not found
+    const FALLBACKS = [
+      { pset: "ICOS Rebar", prop: "Serial number" },
+      { pset: "Pset_ReinforcementBarCommon", prop: "BarMark" },
+      { pset: "Rebar Common", prop: "Mark" }
+    ];
 
     async function initExtension() {
       try {
-        // The global is TrimbleConnectWorkspace (not WorkspaceAPI)
+        // The script loads TrimbleConnectWorkspace globally
         workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use!";
         statusEl.className = "text-success";
-        console.log("Connected to Trimble Connect Workspace API");
+        console.log("Trimble Connect Workspace API connected");
       } catch (error) {
         statusEl.textContent = "Connection failed: " + (error.message || error);
         statusEl.className = "text-danger";
-        console.error("Connection error:", error);
+        console.error(error);
       }
     }
 
@@ -95,6 +109,74 @@
     }
 
     const serialColorMap = new Map();
+
+    // Debug function to log all properties of selected objects
+    async function debugProperties() {
+      if (!viewer) return alert("Not connected");
+
+      const selection = await viewer.getSelection();
+      if (!selection || selection.length === 0) return alert("Please select at least one rebar object first");
+
+      const basicObjects = await viewer.getObjects({ selected: true });
+
+      console.clear();
+      console.log("%c=== PROPERTIES OF SELECTED REBAR OBJECTS ===", "font-weight:bold; color:blue");
+
+      for (const model of basicObjects) {
+        const runtimeIds = model.objects.map(obj => obj.id);
+        if (runtimeIds.length === 0) continue;
+
+        const fullObjects = await viewer.getObjectProperties({
+          modelId: model.modelId,
+          objectRuntimeIds: runtimeIds
+        });
+
+        fullObjects.forEach((obj, i) => {
+          console.log(`\n%cObject ${i + 1} (runtimeId: ${obj.id})`, "font-weight:bold");
+          const propSets = obj.properties?.propertySets || [];
+          if (propSets.length === 0) {
+            console.log("No propertySets found. Raw properties:", obj.properties);
+            return;
+          }
+
+          propSets.forEach(ps => {
+            console.log(`%cProperty Set: "${ps.name}"`, "font-weight:bold; color:green");
+            if (ps.properties && ps.properties.length > 0) {
+              ps.properties.forEach(p => {
+                console.log(`  • ${p.name}: ${p.value}`);
+              });
+            } else {
+              console.log("  (no properties)");
+            }
+          });
+        });
+      }
+
+      alert("Property details printed to browser console (press F12 > Console tab)");
+    }
+
+    // Helper to find the serial/mark value, with fallbacks
+    async function getSerialValue(obj) {
+      const propSets = obj.properties?.propertySets || [];
+
+      // Primary target
+      let targetSet = propSets.find(ps => ps.name === TARGET_PSET);
+      if (targetSet) {
+        const prop = targetSet.properties.find(p => p.name === TARGET_PROP);
+        if (prop?.value) return prop.value.toString();
+      }
+
+      // Fallbacks
+      for (const fb of FALLBACKS) {
+        targetSet = propSets.find(ps => ps.name === fb.pset);
+        if (targetSet) {
+          const prop = targetSet.properties.find(p => p.name === fb.prop);
+          if (prop?.value) return prop.value.toString();
+        }
+      }
+
+      return null;
+    }
 
     async function colorBySerialNumber() {
       if (!viewer) return alert("Not connected");
@@ -115,14 +197,9 @@
         });
 
         for (const obj of fullObjects) {
-          const propSets = obj.properties?.propertySets || [];
-          const targetSet = propSets.find(ps => ps.name === TARGET_PSET);
-          if (!targetSet) continue;
+          const serial = await getSerialValue(obj);
+          if (!serial) continue;
 
-          const serialProp = targetSet.properties.find(p => p.name === TARGET_PROP);
-          if (!serialProp?.value) continue;
-
-          const serial = serialProp.value.toString();
           let color = serialColorMap.get(serial);
           if (!color) {
             color = randomColor();
@@ -144,9 +221,9 @@
       }
 
       if (totalProcessed === 0) {
-        alert(`No "${TARGET_PROP}" found in selected objects (check for "ICOS Rebar" property set)`);
+        alert("No matching serial/mark found. Use the Debug button to check console and adjust TARGET_PSET / TARGET_PROP.");
       } else {
-        alert(`Colored ${totalProcessed} rebar(s) by Serial number`);
+        alert(`Colored ${totalProcessed} rebar(s) by serial/mark`);
       }
     }
 
@@ -170,18 +247,14 @@
         });
 
         for (const obj of fullObjects) {
-          const propSets = obj.properties?.propertySets || [];
-          const targetSet = propSets.find(ps => ps.name === TARGET_PSET);
-          if (!targetSet) continue;
-
-          const serialProp = targetSet.properties.find(p => p.name === TARGET_PROP);
-          if (!serialProp?.value) continue;
+          const serial = await getSerialValue(obj);
+          if (!serial) continue;
 
           const center = obj.boundingBox?.center;
           if (!center) continue;
 
           markups.push({
-            text: serialProp.value.toString(),
+            text: serial,
             position: { x: center.x, y: center.y + 2, z: center.z },
             color: { r: 255, g: 255, b: 0 },
             fontSize: 40,
@@ -193,12 +266,12 @@
       }
 
       if (count === 0) {
-        alert(`No "${TARGET_PROP}" found in selected objects`);
+        alert("No matching serial/mark found for markups.");
         return;
       }
 
       await markup.addTextMarkup(markups);
-      alert(`Added ${count} serial number text markup(s)`);
+      alert(`Added ${count} serial number markup(s)`);
     }
 
     async function resetColors() {
@@ -226,7 +299,6 @@
       }
     }
 
-    // Start connection when page loads
     initExtension();
   </script>
 </body>
