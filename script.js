@@ -1,14 +1,17 @@
 let API = null;
 const statusEl = document.getElementById('status');
 
+// === CUSTOMIZE THESE TWO VALUES BASED ON YOUR MODEL ===
+let TARGET_PROPERTY_SET = "ICOS Rebar";     // Change this to the exact property set name
+let TARGET_PROPERTY_NAME = "Serial number";  // Change this to the exact property name
+// =====================================================
+
 async function initExtension() {
   try {
-    // In extension mode: connect to the parent window (the 3D Viewer)
     API = await TrimbleConnectWorkspace.connect(window.parent);
-
     statusEl.textContent = "Connected to Trimble Connect 3D Viewer";
     statusEl.className = "text-success";
-    console.log("API ready:", API);
+    console.log("API ready");
   } catch (err) {
     statusEl.textContent = "Connection failed: " + err.message;
     statusEl.className = "text-danger";
@@ -16,7 +19,6 @@ async function initExtension() {
   }
 }
 
-// Helper: random color
 function randomColor() {
   const r = Math.floor(Math.random() * 256);
   const g = Math.floor(Math.random() * 256);
@@ -26,89 +28,92 @@ function randomColor() {
 
 const serialColorMap = new Map();
 
-/* Function 1: Color by Serial number */
 async function colorBySerialNumber() {
-  if (!API) return alert("Not connected to viewer");
+  if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
-  if (!selection || selection.length === 0) {
-    return alert("Please select some rebar objects first");
-  }
+  if (!selection || selection.length === 0) return alert("Please select rebar objects");
 
   const objects = await API.viewer.getObjects({ selected: true });
 
-  for (const model of objects) {
-    for (const obj of model.objects) {
-      const propertySets = obj.properties?.propertySets || [];
-      const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      const snProp = rebarSet?.properties?.find(p => p.name === "Serial number");
+  let foundAny = false;
 
+  for (const model of objects) {
+    console.log(`Model ID: ${model.modelId}`);
+    for (const obj of model.objects) {
+      const propSets = obj.properties?.propertySets || [];
+      console.log("Available property sets:", propSets.map(ps => ps.name));
+
+      const targetSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
+      if (!targetSet) continue;
+
+      console.log(`Found set "${TARGET_PROPERTY_SET}" properties:`, targetSet.properties.map(p => p.name));
+
+      const snProp = targetSet.properties.find(p => p.name === TARGET_PROPERTY_NAME);
       if (!snProp?.value) continue;
 
-      const serialNumber = snProp.value;
-      let color = serialColorMap.get(serialNumber);
+      foundAny = true;
+      const serial = snProp.value;
+      let color = serialColorMap.get(serial);
       if (!color) {
         color = randomColor();
-        serialColorMap.set(serialNumber, color);
+        serialColorMap.set(serial, color);
       }
 
       await API.viewer.setObjectState(
-        {
-          modelObjectIds: [{
-            modelId: model.modelId,
-            objectRuntimeIds: [obj.id]
-          }]
-        },
+        { modelObjectIds: [{ modelId: model.modelId, objectRuntimeIds: [obj.id] }] },
         { color }
       );
     }
   }
 
-  alert("Colored selected rebars by Serial number");
+  if (!foundAny) alert(`No "${TARGET_PROPERTY_NAME}" found in property set "${TARGET_PROPERTY_SET}". Check console (F12) for available names.`);
+  else alert("Colored by Serial number successfully!");
 }
 
-/* Function 2: Add Text Markups */
 async function addSerialNumberMarkups() {
-  if (!API) return alert("Not connected to viewer");
+  if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
-  if (!selection || selection.length === 0) {
-    return alert("Please select some rebar objects first");
-  }
+  if (!selection || selection.length === 0) return alert("Please select rebar objects");
 
   const objects = await API.viewer.getObjects({ selected: true });
   const textMarkups = [];
 
+  let foundAny = false;
+
   for (const model of objects) {
     for (const obj of model.objects) {
-      const propertySets = obj.properties?.propertySets || [];
-      const rebarSet = propertySets.find(ps => ps.name === "ICOS Rebar");
-      const snProp = rebarSet?.properties?.find(p => p.name === "Serial number");
+      const propSets = obj.properties?.propertySets || [];
+      const targetSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
+      if (!targetSet) continue;
 
+      const snProp = targetSet.properties.find(p => p.name === TARGET_PROPERTY_NAME);
       if (!snProp?.value) continue;
 
+      foundAny = true;
       const center = obj.boundingBox?.center;
       if (!center) continue;
 
       textMarkups.push({
         text: snProp.value.toString(),
-        position: { x: center.x, y: center.y + 1, z: center.z }, // offset slightly up
-        color: { r: 255, g: 255, b: 0 }, // yellow
-        fontSize: 30,
-        backgroundColor: { r: 0, g: 0, b: 0, a: 150 }
+        position: { x: center.x, y: center.y + 1.5, z: center.z }, // raised a bit higher
+        color: { r: 255, g: 255, b: 0 },
+        fontSize: 36,
+        backgroundColor: { r: 0, g: 0, b: 0, a: 180 }
       });
     }
   }
 
-  if (textMarkups.length === 0) {
-    return alert("No Serial number found in selected objects");
+  if (!foundAny) {
+    alert(`No "${TARGET_PROPERTY_NAME}" found in property set "${TARGET_PROPERTY_SET}". Check console (F12) for available names.`);
+    return;
   }
 
   await API.markup.addTextMarkup(textMarkups);
   alert(`Added ${textMarkups.length} text markups`);
 }
 
-/* Helpers */
 async function resetColors() {
   if (!API) return;
   await API.viewer.setObjectState(undefined, { color: "reset" });
@@ -122,5 +127,4 @@ async function removeMarkups() {
   alert("All markups removed");
 }
 
-// Start connection when page loads
 window.onload = initExtension;
