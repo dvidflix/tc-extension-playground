@@ -68,7 +68,7 @@
 
     async function initExtension() {
       try {
-        // Current global name as of Dec 2025
+        // Current correct global as per official docs (Dec 2025)
         workspaceApi = await WorkspaceAPI.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
@@ -76,7 +76,7 @@
         statusEl.className = "text-success";
         console.log("Trimble Connect Workspace API connected successfully");
       } catch (error) {
-        statusEl.textContent = "Connection failed: " + (error.message || error);
+        statusEl.textContent = "Connection failed: " + (error?.message || error || "Unknown error");
         statusEl.className = "text-danger";
         console.error("Connection error:", error);
       }
