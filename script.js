@@ -1,10 +1,9 @@
 let API = null;
 const statusEl = document.getElementById('status');
 
-// === CUSTOMIZE THESE TWO VALUES BASED ON YOUR MODEL ===
-let TARGET_PROPERTY_SET = "ICOS BBS";     // Change this to the exact property set name
-let TARGET_PROPERTY_NAME = "Assembly level 2";  // Change this to the exact property name
-// =====================================================
+// Fixed based on your model
+const TARGET_PROPERTY_SET = "ICOS Rebar";
+const TARGET_PROPERTY_NAME = "Serial number";  // Exact match from screenshot
 
 async function initExtension() {
   try {
@@ -32,28 +31,23 @@ async function colorBySerialNumber() {
   if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
-  if (!selection || selection.length === 0) return alert("Please select rebar objects");
+  if (!selection || selection.length === 0) return alert("Please select rebar objects first");
 
   const objects = await API.viewer.getObjects({ selected: true });
 
   let foundAny = false;
 
   for (const model of objects) {
-    console.log(`Model ID: ${model.modelId}`);
     for (const obj of model.objects) {
       const propSets = obj.properties?.propertySets || [];
-      console.log("Available property sets:", propSets.map(ps => ps.name));
-
       const targetSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
       if (!targetSet) continue;
-
-      console.log(`Found set "${TARGET_PROPERTY_SET}" properties:`, targetSet.properties.map(p => p.name));
 
       const snProp = targetSet.properties.find(p => p.name === TARGET_PROPERTY_NAME);
       if (!snProp?.value) continue;
 
       foundAny = true;
-      const serial = snProp.value;
+      const serial = snProp.value.toString();
       let color = serialColorMap.get(serial);
       if (!color) {
         color = randomColor();
@@ -67,15 +61,18 @@ async function colorBySerialNumber() {
     }
   }
 
-  if (!foundAny) alert(`No "${TARGET_PROPERTY_NAME}" found in property set "${TARGET_PROPERTY_SET}". Check console (F12) for available names.`);
-  else alert("Colored by Serial number successfully!");
+  if (!foundAny) {
+    alert(`No "${TARGET_PROPERTY_NAME}" found in "${TARGET_PROPERTY_SET}". Select different objects or check properties.`);
+  } else {
+    alert("Successfully colored selected rebars by Serial number (same number = same color)!");
+  }
 }
 
 async function addSerialNumberMarkups() {
   if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
-  if (!selection || selection.length === 0) return alert("Please select rebar objects");
+  if (!selection || selection.length === 0) return alert("Please select rebar objects first");
 
   const objects = await API.viewer.getObjects({ selected: true });
   const textMarkups = [];
@@ -97,21 +94,21 @@ async function addSerialNumberMarkups() {
 
       textMarkups.push({
         text: snProp.value.toString(),
-        position: { x: center.x, y: center.y + 1.5, z: center.z }, // raised a bit higher
-        color: { r: 255, g: 255, b: 0 },
-        fontSize: 36,
-        backgroundColor: { r: 0, g: 0, b: 0, a: 180 }
+        position: { x: center.x, y: center.y + 2, z: center.z }, // raised higher for visibility
+        color: { r: 255, g: 255, b: 0 }, // bright yellow
+        fontSize: 40,
+        backgroundColor: { r: 0, g: 0, b: 0, a: 200 } // darker background
       });
     }
   }
 
   if (!foundAny) {
-    alert(`No "${TARGET_PROPERTY_NAME}" found in property set "${TARGET_PROPERTY_SET}". Check console (F12) for available names.`);
+    alert(`No "${TARGET_PROPERTY_NAME}" found in selected objects.`);
     return;
   }
 
   await API.markup.addTextMarkup(textMarkups);
-  alert(`Added ${textMarkups.length} text markups`);
+  alert(`Added ${textMarkups.length} text markups showing the Serial number!`);
 }
 
 async function resetColors() {
