@@ -3,7 +3,7 @@ const statusEl = document.getElementById('status');
 
 // === CUSTOMIZE THESE TWO VALUES BASED ON YOUR MODEL ===
 let TARGET_PROPERTY_SET = "ICOS Rebar";     // Change this to the exact property set name
-let TARGET_PROPERTY_NAME = "Serial number";  // Change this to the exact property name
+let TARGET_PROPERTY_NAME = "Size";  // Change this to the exact property name
 // =====================================================
 
 async function initExtension() {
