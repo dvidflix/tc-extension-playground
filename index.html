@@ -41,7 +41,7 @@
       Color All Selected – Same Color (Test)
     </button>
     <button class="btn btn-success btn-lg btn-block" onclick="addTestMarkups()">
-      Add Text Markup "9003" on Each (Test)
+      Add Text Markup "9003" – Visible Test
     </button>
     <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
       Reset Colors
@@ -53,9 +53,8 @@
 
   <div class="info mt-4">
     <p><strong>Test Mode Active</strong></p>
-    <p>This version ignores real properties and uses a fixed value "9003" for every selected rebar.</p>
-    <p>Purpose: Verify connection, selection reading, coloring, and markups.</p>
-    <p><strong>Fixes in this version:</strong> Better markup positioning using object bounding boxes + fallback to model origin if no bounding box.</p>
+    <p>Coloring works! Markups now place a large, bright "9003 TEST" label at the model origin (0,0,0) so you can definitely see if the markup API is working.</p>
+    <p>Zoom to origin or use "Fit View" to see the label.</p>
   </div>
 
   <script>
@@ -64,8 +63,7 @@
     let markup = null;
     const statusEl = document.getElementById('status');
 
-    const TEST_SERIAL = "9003";
-    const TEST_COLOR = { r: 255, g: 0, b: 255 };  // Bright magenta
+    const TEST_SERIAL = "9003 TEST – MARKUP WORKING?";
 
     async function initExtension() {
       try {
@@ -102,81 +100,46 @@
               objectRuntimeIds: runtimeIds
             }]
           },
-          { color: TEST_COLOR }
+          { color: { r: 255, g: 0, b: 255 } }
         );
 
         totalProcessed += runtimeIds.length;
       }
 
-      alert(`Applied bright magenta color to ${totalProcessed} selected rebar(s) (simulating serial "${TEST_SERIAL}")`);
+      alert(`Applied bright magenta color to ${totalProcessed} selected rebar(s)`);
     }
 
     async function addTestMarkups() {
       if (!viewer || !markup) return alert("Not connected or Markup API unavailable");
 
-      const selection = await viewer.getSelection();
-      if (!selection || selection.length === 0) return alert("Please select one or more rebar objects first");
+      // Force a very visible markup at the absolute origin (0,0,0)
+      const testMarkup = [{
+        text: TEST_SERIAL,
+        position: { x: 0, y: 0, z: 0 },
+        color: { r: 255, g: 255, b: 0 },           // Bright yellow text
+        fontSize: 100,                             // Very large
+        backgroundColor: { r: 0, g: 0, b: 255, a: 220 },  // Blue semi-transparent background
+        bold: true
+      }];
 
-      const basicObjects = await viewer.getObjects({ selected: true });
-      const markups = [];
-      let count = 0;
-
-      for (const model of basicObjects) {
-        const runtimeIds = model.objects.map(obj => obj.id);
-        if (runtimeIds.length === 0) continue;
-
-        // Get bounding boxes
-        const boundingBoxes = await viewer.getObjectBoundingBoxes({
-          modelId: model.modelId,
-          objectRuntimeIds: runtimeIds
-        });
-
-        boundingBoxes.forEach((bb, i) => {
-          if (!bb || !bb.center) return;
-
-          markups.push({
-            text: TEST_SERIAL,
-            position: { x: bb.center.x, y: bb.center.y + 2, z: bb.center.z },  // Slightly above center
-            color: { r: 255, g: 255, b: 0 },
-            fontSize: 40,
-            backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
-          });
-
-          count++;
-        });
-
-        // Fallback if no bounding boxes (rare)
-        if (boundingBoxes.length === 0 || boundingBoxes.every(bb => !bb)) {
-          // Use approximate model center or skip – but for test, add at origin
-          markups.push({
-            text: TEST_SERIAL + " (fallback pos)",
-            position: { x: 0, y: 0, z: 0 },
-            color: { r: 255, g: 0, b: 0 },
-            fontSize: 40
-          });
-          count++;
-        }
+      try {
+        await markup.addTextMarkup(testMarkup);
+        alert("Markup added at origin (0,0,0)! Zoom to origin or use Fit View to see the large yellow '9003 TEST' label.");
+      } catch (err) {
+        console.error("Markup add error:", err);
+        alert("Failed to add markup – check console (F12)");
       }
-
-      if (count === 0) {
-        alert("No positions found for markups – try selecting different objects");
-        return;
-      }
-
-      await markup.addTextMarkup(markups);
-      alert(`Added "${TEST_SERIAL}" text markup on ${count} position(s)`);
     }
 
     async function resetColors() {
       if (!viewer) return alert("Not connected");
 
       try {
-        // Reset all objects globally
         await viewer.setObjectState(undefined, { color: null });
         alert("All colors reset successfully");
       } catch (error) {
-        console.error("Reset colors error:", error);
-        alert("Failed to reset colors – try manually or reload viewer");
+        console.error("Reset error:", error);
+        alert("Reset failed – try reloading the viewer");
       }
     }
 
