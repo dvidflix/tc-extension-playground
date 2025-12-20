@@ -6,7 +6,8 @@
   <title>Rebar Serial Number Tools</title>
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-  <script src="https://unpkg.com/trimble-connect-workspace-api@latest/dist/workspace-api.js"></script>
+  <!-- Load the official Trimble Connect Workspace API (only once) -->
+  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
     body {
       padding: 1rem;
@@ -46,7 +47,7 @@
     <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
       Reset Colors
     </button>
-    <button class="btn btn-danger btn-lg btn-block" onclick="removeMarkups()">
+    <button class="btn btn-danger btn-lg btn-block" onclick="removeAllMarkups()">
       Remove All Markups
     </button>
   </div>
@@ -60,9 +61,175 @@
     <p>Rebars with the same <em>Serial number</em> (from ICOS Rebar) will get the same color and label.</p>
   </div>
 
-  <!-- Trimble Connect Workspace API -->
-  <script src="https://unpkg.com/trimble-connect-workspace-api@latest"></script>
-  <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
-  <script src="script.js"></script>
+  <script>
+    let workspaceApi = null;
+    let viewer = null;
+    let markup = null;  // Shortcut to markup API
+    const statusEl = document.getElementById('status');
+
+    const TARGET_PROPERTY_SET = "ICOS Rebar";
+    const TARGET_PROPERTY_NAME = "Serial number";
+
+    async function initExtension() {
+      try {
+        workspaceApi = await WorkspaceAPI.connect(window.parent);
+        viewer = workspaceApi.viewer;
+        markup = workspaceApi.markup;  // MarkupAPI is on the root WorkspaceAPI
+        statusEl.textContent = "Connected – Ready to use!";
+        statusEl.className = "text-success";
+        console.log("Trimble Connect Workspace API connected successfully");
+      } catch (error) {
+        statusEl.textContent = "Connection failed: " + (error.message || error);
+        statusEl.className = "text-danger";
+        console.error("Connection error:", error);
+      }
+    }
+
+    function randomColor() {
+      return {
+        r: Math.floor(Math.random() * 256),
+        g: Math.floor(Math.random() * 256),
+        b: Math.floor(Math.random() * 256)
+      };
+    }
+
+    const serialColorMap = new Map();
+
+    async function colorBySerialNumber() {
+      if (!viewer) return alert("Not connected");
+
+      const selection = await viewer.getSelection();
+      if (!selection || selection.length === 0) return alert("Please select rebar objects first");
+
+      const basicObjects = await viewer.getObjects({ selected: true });
+
+      let totalProcessed = 0;
+
+      for (const model of basicObjects) {
+        const runtimeIds = model.objects.map(obj => obj.id);
+        if (runtimeIds.length === 0) continue;
+
+        const fullObjects = await viewer.getObjectProperties({
+          modelId: model.modelId,
+          objectRuntimeIds: runtimeIds
+        });
+
+        for (const obj of fullObjects) {
+          const propSets = obj.properties?.propertySets || [];
+          const rebarSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
+          if (!rebarSet) continue;
+
+          const serialProp = rebarSet.properties.find(p => p.name === TARGET_PROPERTY_NAME);
+          if (!serialProp?.value) continue;
+
+          const serial = serialProp.value.toString();
+          let color = serialColorMap.get(serial);
+          if (!color) {
+            color = randomColor();
+            serialColorMap.set(serial, color);
+          }
+
+          await viewer.setObjectState(
+            {
+              modelObjectIds: [{
+                modelId: model.modelId,
+                objectRuntimeIds: [obj.id]
+              }]
+            },
+            { color }
+          );
+
+          totalProcessed++;
+        }
+      }
+
+      if (totalProcessed === 0) {
+        alert("No 'Serial number' found in selected objects (check if rebars are selected and have ICOS Rebar properties)");
+      } else {
+        alert(`Colored ${totalProcessed} rebar(s) by Serial number`);
+      }
+    }
+
+    async function addSerialNumberMarkups() {
+      if (!viewer) return alert("Not connected");
+      if (!markup) return alert("Markup API not available");
+
+      const selection = await viewer.getSelection();
+      if (!selection || selection.length === 0) return alert("Please select rebar objects first");
+
+      const basicObjects = await viewer.getObjects({ selected: true });
+
+      const markups = [];
+      let count = 0;
+
+      for (const model of basicObjects) {
+        const runtimeIds = model.objects.map(obj => obj.id);
+        if (runtimeIds.length === 0) continue;
+
+        const fullObjects = await viewer.getObjectProperties({
+          modelId: model.modelId,
+          objectRuntimeIds: runtimeIds
+        });
+
+        for (const obj of fullObjects) {
+          const propSets = obj.properties?.propertySets || [];
+          const rebarSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
+          if (!rebarSet) continue;
+
+          const serialProp = rebarSet.properties.find(p => p.name === TARGET_PROPERTY_NAME);
+          if (!serialProp?.value) continue;
+
+          const center = obj.boundingBox?.center;
+          if (!center) continue;
+
+          markups.push({
+            text: serialProp.value.toString(),
+            position: { x: center.x, y: center.y + 2, z: center.z },
+            color: { r: 255, g: 255, b: 0 },
+            fontSize: 40,
+            backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
+          });
+
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        alert("No 'Serial number' found in selected objects");
+        return;
+      }
+
+      await markup.addTextMarkup(markups);
+      alert(`Added ${count} serial number markup(s)`);
+    }
+
+    async function resetColors() {
+      if (!viewer) return alert("Not connected");
+
+      try {
+        await viewer.setObjectState(undefined, { color: { reset: true } });
+        serialColorMap.clear();
+        alert("All colors reset successfully");
+      } catch (error) {
+        console.error(error);
+        alert("Failed to reset colors");
+      }
+    }
+
+    async function removeAllMarkups() {
+      if (!markup) return alert("Markup API not available or not connected");
+
+      try {
+        await markup.clearAll();
+        alert("All markups removed successfully");
+      } catch (error) {
+        console.error(error);
+        alert("Failed to remove markups");
+      }
+    }
+
+    // Initialize on page load
+    initExtension();
+  </script>
 </body>
 </html>
