@@ -1,22 +1,19 @@
 let API = null;
 const statusEl = document.getElementById('status');
 
-// Exact names from your model
 const TARGET_PROPERTY_SET = "ICOS Rebar";
 const TARGET_PROPERTY_NAME = "Serial number";
 
 async function initExtension() {
   try {
-    // Critical: connect to window.parent (the actual 3D viewer)
     API = await TrimbleConnectWorkspace.connect(window.parent);
-
     statusEl.textContent = "Connected – Ready to use!";
     statusEl.className = "text-success";
-    console.log("Trimble Connect API connected successfully");
+    console.log("Trimble Connect API connected");
   } catch (error) {
     statusEl.textContent = "Connection failed";
     statusEl.className = "text-danger";
-    console.error("Connection error:", error);
+    console.error(error);
   }
 }
 
@@ -31,17 +28,27 @@ function randomColor() {
 const serialColorMap = new Map();
 
 async function colorBySerialNumber() {
-  if (!API) return alert("Not connected to viewer");
+  if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
   if (!selection?.length) return alert("Please select rebar objects first");
 
-  const objects = await API.viewer.getObjects({ selected: true });
+  // Step 1: Get basic selected objects (to extract modelId + runtimeIds)
+  const basicObjects = await API.viewer.getObjects({ selected: true });
 
-  let processedCount = 0;
+  let totalProcessed = 0;
 
-  for (const model of objects) {
-    for (const obj of model.objects) {
+  for (const model of basicObjects) {
+    const runtimeIds = model.objects.map(obj => obj.id);
+    if (runtimeIds.length === 0) continue;
+
+    // Step 2: Fetch full properties for these objects
+    const fullObjects = await API.viewer.getObjectProperties({
+      modelId: model.modelId,
+      objectRuntimeIds: runtimeIds
+    });
+
+    for (const obj of fullObjects) {
       const propSets = obj.properties?.propertySets || [];
       const rebarSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
       if (!rebarSet) continue;
@@ -56,6 +63,7 @@ async function colorBySerialNumber() {
         serialColorMap.set(serial, color);
       }
 
+      // Apply color to this single object
       await API.viewer.setObjectState(
         {
           modelObjectIds: [{
@@ -66,29 +74,38 @@ async function colorBySerialNumber() {
         { color }
       );
 
-      processedCount++;
+      totalProcessed++;
     }
   }
 
-  if (processedCount === 0) {
-    alert("No objects with 'Serial number' in 'ICOS Rebar' found in selection");
+  if (totalProcessed === 0) {
+    alert("No 'Serial number' found in selected objects (check if rebars are selected and have ICOS Rebar properties)");
   } else {
-    alert(`Colored ${processedCount} rebar object(s) by Serial number`);
+    alert(`Colored ${totalProcessed} rebar(s) by Serial number`);
   }
 }
 
 async function addSerialNumberMarkups() {
-  if (!API) return alert("Not connected to viewer");
+  if (!API) return alert("Not connected");
 
   const selection = await API.viewer.getSelection();
   if (!selection?.length) return alert("Please select rebar objects first");
 
-  const objects = await API.viewer.getObjects({ selected: true });
+  const basicObjects = await API.viewer.getObjects({ selected: true });
+
   const markups = [];
   let count = 0;
 
-  for (const model of objects) {
-    for (const obj of model.objects) {
+  for (const model of basicObjects) {
+    const runtimeIds = model.objects.map(obj => obj.id);
+    if (runtimeIds.length === 0) continue;
+
+    const fullObjects = await API.viewer.getObjectProperties({
+      modelId: model.modelId,
+      objectRuntimeIds: runtimeIds
+    });
+
+    for (const obj of fullObjects) {
       const propSets = obj.properties?.propertySets || [];
       const rebarSet = propSets.find(ps => ps.name === TARGET_PROPERTY_SET);
       if (!rebarSet) continue;
@@ -102,7 +119,7 @@ async function addSerialNumberMarkups() {
       markups.push({
         text: serialProp.value.toString(),
         position: { x: center.x, y: center.y + 2, z: center.z },
-        color: { r: 255, g: 255, b: 0 },         // yellow text
+        color: { r: 255, g: 255, b: 0 },
         fontSize: 40,
         backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
       });
@@ -117,21 +134,9 @@ async function addSerialNumberMarkups() {
   }
 
   await API.markup.addTextMarkup(markups);
-  alert(`Added ${count} serial number label(s)`);
+  alert(`Added ${count} serial number markup(s)`);
 }
 
 async function resetColors() {
   if (!API) return;
-  await API.viewer.setObjectState(undefined, { color: "reset" });
-  serialColorMap.clear();
-  alert("All colors reset");
-}
-
-async function removeMarkups() {
-  if (!API) return;
-  await API.markup.removeMarkups();
-  alert("All markups removed");
-}
-
-// Start connection on load
-window.onload = initExtension;
+  await API.viewer.setObjectState(undefined, { color: "
