@@ -3,37 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rebar Serial number Tools</title>
+  <title>Rebar Serial Number Tools</title>
 
-  <link crossorigin rel="stylesheet"
-        href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
 
   <style>
-    body { padding: 1rem; font-family: Arial, sans-serif; background: #f8f9fa; }
+    body {
+      padding: 1rem;
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
     h3 { margin-bottom: 1rem; }
-    #status { margin: 1rem 0; font-weight: bold; }
-    button { margin: 0.5rem 0.25rem; }
+    #status {
+      margin: 1rem 0;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+    .btn { margin: 0.25rem; }
+    .info {
+      margin-top: auto;
+      font-size: 0.9rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
 
-  <h3>Rebar Serial number Tools</h3>
-  <div id="status" class="text-info">Connecting to Trimble Connect...</div>
+  <h3>Rebar Serial Number Tools</h3>
+
+  <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
-    <button class="btn btn-primary" onclick="colorBySerialNumber()">Color by Serial number</button>
-    <button class="btn btn-success" onclick="addSerialNumberMarkups()">Add Serial number Text Markups</button>
-    <button class="btn btn-warning" onclick="resetColors()">Reset Colors</button>
-    <button class="btn btn-danger" onclick="removeMarkups()">Remove All Markups</button>
+    <button class="btn btn-primary btn-lg btn-block" onclick="colorBySerialNumber()">
+      Color by Serial number
+    </button>
+    <button class="btn btn-success btn-lg btn-block" onclick="addSerialNumberMarkups()">
+      Add Serial number Text Markups
+    </button>
+    <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
+      Reset Colors
+    </button>
+    <button class="btn btn-danger btn-lg btn-block" onclick="removeMarkups()">
+      Remove All Markups
+    </button>
   </div>
 
-  <div class="mt-3 text-muted small">
-    <p>Select rebar objects in the 3D viewer first, then use the buttons above.</p>
+  <div class="info mt-4">
+    <p><strong>How to use:</strong></p>
+    <ol>
+      <li>Select one or more rebar objects in the 3D view.</li>
+      <li>Click a button above.</li>
+    </ol>
+    <p>Rebars with the same <em>Serial number</em> (from ICOS Rebar) will get the same color and label.</p>
   </div>
 
   <!-- Trimble Connect Workspace API -->
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
-
   <script src="script.js"></script>
 </body>
 </html>
