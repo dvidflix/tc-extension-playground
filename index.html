@@ -54,14 +54,7 @@
   <div class="info mt-4">
     <p><strong>Test Mode Active</strong></p>
     <p>This version ignores real properties and uses a fixed value "9003" for every selected rebar.</p>
-    <p>Purpose: Verify that the extension can successfully:</p>
-    <ul>
-      <li>Connect to the viewer</li>
-      <li>Read selected objects</li>
-      <li>Apply colors</li>
-      <li>Create text markups</li>
-    </ul>
-    <p>Once these work, we can switch back to reading actual properties.</p>
+    <p>Purpose: Verify connection, selection reading, coloring, and markups.</p>
   </div>
 
   <script>
@@ -71,24 +64,23 @@
     const statusEl = document.getElementById('status');
 
     const TEST_SERIAL = "9003";
+    const TEST_COLOR = { r: 255, g: 0, 255 };  // Bright magenta
 
     async function initExtension() {
       try {
-        workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
+        // Current global name as of Dec 2025
+        workspaceApi = await WorkspaceAPI.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use! (Test Mode)";
         statusEl.className = "text-success";
-        console.log("Trimble Connect Workspace API connected");
+        console.log("Trimble Connect Workspace API connected successfully");
       } catch (error) {
         statusEl.textContent = "Connection failed: " + (error.message || error);
         statusEl.className = "text-danger";
-        console.error(error);
+        console.error("Connection error:", error);
       }
     }
-
-    // Fixed test color – bright magenta so it's obvious
-    const TEST_COLOR = { r: 255, g: 0, 255 };
 
     async function colorByTestSerial() {
       if (!viewer) return alert("Not connected");
@@ -107,7 +99,7 @@
           {
             modelObjectIds: [{
               modelId: model.modelId,
-              objectRuntimeIds: runtimeIds  // Apply to all in this model at once for speed
+              objectRuntimeIds: runtimeIds
             }]
           },
           { color: TEST_COLOR }
@@ -116,7 +108,7 @@
         totalProcessed += runtimeIds.length;
       }
 
-      alert(`Applied test color to ${totalProcessed} selected rebar(s). All now have serial "${TEST_SERIAL}" (simulated).`);
+      alert(`Applied bright magenta color to ${totalProcessed} selected rebar(s) (simulating serial "${TEST_SERIAL}")`);
     }
 
     async function addTestMarkups() {
@@ -133,7 +125,6 @@
         const runtimeIds = model.objects.map(obj => obj.id);
         if (runtimeIds.length === 0) continue;
 
-        // Get bounding boxes for positioning
         const fullObjects = await viewer.getObjectProperties({
           modelId: model.modelId,
           objectRuntimeIds: runtimeIds
@@ -146,7 +137,7 @@
           markups.push({
             text: TEST_SERIAL,
             position: { x: center.x, y: center.y + 2, z: center.z },
-            color: { r: 255, g: 255, b: 0 },           // Yellow text
+            color: { r: 255, g: 255, b: 0 },
             fontSize: 40,
             backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
           });
@@ -156,7 +147,7 @@
       }
 
       if (count === 0) {
-        alert("No bounding boxes found – unable to place markups");
+        alert("No bounding boxes found for selected objects");
         return;
       }
 
