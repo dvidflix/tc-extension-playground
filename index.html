@@ -64,25 +64,19 @@
     const statusEl = document.getElementById('status');
 
     const TEST_SERIAL = "9003";
-    const TEST_COLOR = { r: 255, g: 0, 255 };  // Bright magenta
+    const TEST_COLOR = { r: 255, g: 0, b: 255 };  // Bright magenta
 
     async function initExtension() {
       try {
-        // Correct global object name: TrimbleConnectWorkspace
-        // Added optional event handler as per official examples
-        workspaceApi = await TrimbleConnectWorkspace.connect(
-          window.parent,
-          (event, data) => {
-            console.log("Workspace event:", event, data);
-          }
-        );
+        // Correct for side panel custom extensions in 3D Viewer: connect to parent window
+        workspaceApi = await WorkspaceAPI.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use! (Test Mode)";
         statusEl.className = "text-success";
         console.log("Trimble Connect Workspace API connected successfully");
       } catch (error) {
-        statusEl.textContent = "Connection failed: " + (error?.message || error || "Unknown error");
+        statusEl.textContent = "Connection failed: " + (error?.message || error || "Check console");
         statusEl.className = "text-danger";
         console.error("Connection error:", error);
       }
