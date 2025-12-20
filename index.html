@@ -55,6 +55,7 @@
     <p><strong>Test Mode Active</strong></p>
     <p>This version ignores real properties and uses a fixed value "9003" for every selected rebar.</p>
     <p>Purpose: Verify connection, selection reading, coloring, and markups.</p>
+    <p><strong>Fixes in this version:</strong> Better markup positioning using object bounding boxes + fallback to model origin if no bounding box.</p>
   </div>
 
   <script>
@@ -68,14 +69,7 @@
 
     async function initExtension() {
       try {
-        // The global object exposed by the script is TrimbleConnectWorkspace
-        // For side panel extensions in 3D Viewer, connect to window.parent with event handler
-        workspaceApi = await TrimbleConnectWorkspace.connect(
-          window.parent,
-          (event, data) => {
-            console.log("Received event from viewer:", event, data);
-          }
-        );
+        workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use! (Test Mode)";
@@ -131,45 +125,58 @@
         const runtimeIds = model.objects.map(obj => obj.id);
         if (runtimeIds.length === 0) continue;
 
-        const fullObjects = await viewer.getObjectProperties({
+        // Get bounding boxes
+        const boundingBoxes = await viewer.getObjectBoundingBoxes({
           modelId: model.modelId,
           objectRuntimeIds: runtimeIds
         });
 
-        for (const obj of fullObjects) {
-          const center = obj.boundingBox?.center;
-          if (!center) continue;
+        boundingBoxes.forEach((bb, i) => {
+          if (!bb || !bb.center) return;
 
           markups.push({
             text: TEST_SERIAL,
-            position: { x: center.x, y: center.y + 2, z: center.z },
+            position: { x: bb.center.x, y: bb.center.y + 2, z: bb.center.z },  // Slightly above center
             color: { r: 255, g: 255, b: 0 },
             fontSize: 40,
             backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
           });
 
           count++;
+        });
+
+        // Fallback if no bounding boxes (rare)
+        if (boundingBoxes.length === 0 || boundingBoxes.every(bb => !bb)) {
+          // Use approximate model center or skip – but for test, add at origin
+          markups.push({
+            text: TEST_SERIAL + " (fallback pos)",
+            position: { x: 0, y: 0, z: 0 },
+            color: { r: 255, g: 0, b: 0 },
+            fontSize: 40
+          });
+          count++;
         }
       }
 
       if (count === 0) {
-        alert("No bounding boxes found for selected objects");
+        alert("No positions found for markups – try selecting different objects");
         return;
       }
 
       await markup.addTextMarkup(markups);
-      alert(`Added "${TEST_SERIAL}" text markup on ${count} rebar(s)`);
+      alert(`Added "${TEST_SERIAL}" text markup on ${count} position(s)`);
     }
 
     async function resetColors() {
       if (!viewer) return alert("Not connected");
 
       try {
-        await viewer.setObjectState(undefined, { color: { reset: true } });
+        // Reset all objects globally
+        await viewer.setObjectState(undefined, { color: null });
         alert("All colors reset successfully");
       } catch (error) {
-        console.error(error);
-        alert("Failed to reset colors");
+        console.error("Reset colors error:", error);
+        alert("Failed to reset colors – try manually or reload viewer");
       }
     }
 
@@ -180,7 +187,7 @@
         await markup.clearAll();
         alert("All markups removed successfully");
       } catch (error) {
-        console.error(error);
+        console.error("Remove markups error:", error);
         alert("Failed to remove markups");
       }
     }
