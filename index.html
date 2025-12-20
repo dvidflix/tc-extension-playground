@@ -72,7 +72,8 @@
 
     async function initExtension() {
       try {
-        workspaceApi = await WorkspaceAPI.connect(window.parent);
+        // The global is TrimbleConnectWorkspace (not WorkspaceAPI)
+        workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use!";
@@ -93,7 +94,7 @@
       };
     }
 
-    const serialColorMap = new Map();  // Persists colors across sessions/buttons
+    const serialColorMap = new Map();
 
     async function colorBySerialNumber() {
       if (!viewer) return alert("Not connected");
@@ -181,10 +182,10 @@
 
           markups.push({
             text: serialProp.value.toString(),
-            position: { x: center.x, y: center.y + 2, z: center.z },  // Slightly above center
-            color: { r: 255, g: 255, b: 0 },       // Yellow text
+            position: { x: center.x, y: center.y + 2, z: center.z },
+            color: { r: 255, g: 255, b: 0 },
             fontSize: 40,
-            backgroundColor: { r: 0, g: 0, b: 0, a: 200 }  // Semi-transparent black background
+            backgroundColor: { r: 0, g: 0, b: 0, a: 200 }
           });
 
           count++;
