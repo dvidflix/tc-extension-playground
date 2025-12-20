@@ -3,91 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trimble Connect Markup Example (Reconstructed)</title>
+  <title>Rebar Serial Labeling Tool (Recreated)</title>
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    #viewer { width: 100%; height: 80vh; border: 1px solid #ccc; }
-    button { margin: 10px 5px; padding: 10px; font-size: 16px; }
+    body { margin: 0; font-family: Arial; }
+    #viewer { width: 100%; height: 85vh; border: none; }
+    .controls { padding: 10px; background: #eee; text-align: center; }
+    button { margin: 5px; padding: 10px 20px; font-size: 16px; }
   </style>
 </head>
 <body>
-
-  <h2>Reconstructed Trimble Connect Markup Example</h2>
-  <p>This is a typical embedded viewer setup with programmatic text markup addition, based on the official Trimble Connect Workspace API documentation.</p>
-
-  <div>
-    <button onclick="addTextMarkups()">Add Text Markups</button>
-    <button onclick="clearMarkups()">Clear All Markups</button>
+  <div class="controls">
+    <button onclick="labelRebar()">Label Selected Rebar with Serial Number</button>
+    <button onclick="colorRebar()">Color Selected by Serial</button>
+    <button onclick="clearMarkups()">Clear Markups</button>
+    <button onclick="resetColors()">Reset Colors</button>
   </div>
-
-  <iframe id="viewer" src="about:blank"></iframe>
+  <iframe id="viewer"></iframe>
 
   <script>
     let workspaceApi = null;
+    let viewer = null;
     let markup = null;
 
-    async function initViewer() {
+    async function init() {
       const iframe = document.getElementById('viewer');
-      
-      // Load a public Trimble Connect 3D viewer embed (replace with your project/share link if needed)
-      // Example public demo model – use your own project embed URL for real use
-      iframe.src = "https://3d.connect.trimble.com/embed?projectId=your-project-id&accessToken=your-token";  // Placeholder – get from Trimble Connect share/embed
+      // REPLACE WITH YOUR PROJECT EMBED URL
+      iframe.src = "https://3d.connect.trimble.com/embed?projectId=YOUR_ID&accessToken=YOUR_TOKEN";
 
       try {
-        // Connect to the iframe-hosted viewer
         workspaceApi = await TrimbleConnectWorkspace.connect(iframe.contentWindow);
+        viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
-        console.log("Connected to embedded viewer – Markup API available");
-        alert("Embedded viewer loaded and connected. Markup API ready!");
+        console.log("Connected – Full MarkupAPI available!");
       } catch (err) {
-        console.error(err);
         alert("Connection failed: " + err.message);
       }
     }
 
-    async function addTextMarkups() {
-      if (!markup) return alert("Markup API not available");
+    async function labelRebar() {
+      if (!markup || !viewer) return alert("Not connected");
 
-      const textMarkups = [
-        {
-          text: "Sample Text Markup 1",
-          position: { x: 0, y: 10, z: 0 },
-          color: { r: 255, g: 255, b: 0 },      // Yellow
-          fontSize: 60,
-          backgroundColor: { r: 0, g: 0, b: 0, a: 200 },
-          bold: true
-        },
-        {
-          text: "Another Label at Origin",
-          position: { x: 0, y: 0, z: 0 },
-          color: { r: 0, g: 255, b: 255 },      // Cyan
-          fontSize: 80
-        }
-      ];
+      const sel = await viewer.getSelection();
+      if (!sel.length) return alert("Select rebar first");
 
-      try {
-        const added = await markup.addTextMarkup(textMarkups);
-        console.log("Added text markups:", added);
-        alert(`Added ${added.length} text markup(s)! Fit view to see them.`);
-      } catch (err) {
-        console.error(err);
-        alert("Failed to add markups: " + err.message);
+      const objects = await viewer.getObjects({ selected: true });
+      const markups = [];
+      let count = 0;
+
+      for (const model of objects) {
+        const ids = model.objects.map(o => o.id);
+        const props = await viewer.getObjectProperties({ modelId: model.modelId, objectRuntimeIds: ids });
+        const bbs = await viewer.getObjectBoundingBoxes({ modelId: model.modelId, objectRuntimeIds: ids });
+
+        props.forEach((obj, i) => {
+          // Adjust for your property set/name
+          const psets = obj.properties?.propertySets || [];
+          const rebarSet = psets.find(ps => ps.name.includes("Rebar") || ps.name.includes("Tekla"));
+          const serial = rebarSet?.properties?.find(p => p.name.includes("Serial") || p.name.includes("position") || p.name.includes("mark"))?.value || "N/A";
+
+          const center = bbs[i]?.center;
+          if (!center) return;
+
+          markups.push({
+            text: serial.toString(),
+            position: { x: center.x, y: center.y + 3, z: center.z },
+            color: { r: 255, g: 255, b: 0 },
+            fontSize: 50,
+            backgroundColor: { r: 0, g: 0, b: 0, a: 200 },
+            bold: true
+          });
+          count++;
+        });
       }
+
+      await markup.addTextMarkup(markups);
+      alert(`Added ${count} serial labels`);
     }
 
-    async function clearMarkups() {
-      if (!markup) return alert("Markup API not available");
-      try {
-        await markup.clearAll();
-        alert("All markups cleared");
-      } catch (err) {
-        alert("Clear failed");
-      }
-    }
+    // Add similar functions for coloring if needed...
 
-    // Start when page loads
-    window.onload = initViewer;
+    async function clearMarkups() { if (markup) await markup.clearAll(); }
+    async function resetColors() { if (viewer) await viewer.setObjectState(undefined, { color: null }); }
+
+    init();
   </script>
 </body>
 </html>
