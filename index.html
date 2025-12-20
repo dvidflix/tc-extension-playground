@@ -68,8 +68,14 @@
 
     async function initExtension() {
       try {
-        // Current correct global as per official docs (Dec 2025)
-        workspaceApi = await WorkspaceAPI.connect(window.parent);
+        // Correct global object name: TrimbleConnectWorkspace
+        // Added optional event handler as per official examples
+        workspaceApi = await TrimbleConnectWorkspace.connect(
+          window.parent,
+          (event, data) => {
+            console.log("Workspace event:", event, data);
+          }
+        );
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
         statusEl.textContent = "Connected – Ready to use! (Test Mode)";
