@@ -3,156 +3,167 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rebar Serial Number Tools (Test Mode)</title>
+  <title>Rebar Serial Number Tools</title>
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
-    body {
-      padding: 1rem;
-      font-family: Arial, sans-serif;
-      background: #f8f9fa;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+    body { padding: 1rem; font-family: Arial, sans-serif; background: #f8f9fa; height: 100vh; display: flex; flex-direction: column; }
     h3 { margin-bottom: 1rem; }
-    #status {
-      margin: 1rem 0;
-      font-weight: bold;
-      font-size: 1.1rem;
-    }
+    #status { margin: 1rem 0; font-weight: bold; font-size: 1.1rem; }
     .btn { margin: 0.25rem; }
-    .info {
-      margin-top: auto;
-      font-size: 0.9rem;
-      color: #666;
-    }
+    .info { margin-top: auto; font-size: 0.9rem; color: #666; }
   </style>
 </head>
 <body>
 
-  <h3>Rebar Serial Number Tools – Test Mode</h3>
+  <h3>Rebar Serial Number Tools</h3>
 
   <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
-    <button class="btn btn-primary btn-lg btn-block" onclick="colorByTestSerial()">
-      Color All Selected – Same Color (Test)
+    <button class="btn btn-info btn-lg btn-block" onclick="debugProperties()">
+      Debug Selected Properties (Open Console F12)
     </button>
-    <button class="btn btn-success btn-lg btn-block" onclick="addTestMarkups()">
-      Add Text Markup "9003" – Visible Test
+    <button class="btn btn-primary btn-lg btn-block" onclick="colorBySerial()">
+      Color by Serial / Mark
     </button>
     <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
       Reset Colors
     </button>
-    <button class="btn btn-danger btn-lg btn-block" onclick="removeAllMarkups()">
-      Remove All Markups
-    </button>
   </div>
 
   <div class="info mt-4">
-    <p><strong>Test Mode Active</strong></p>
-    <p>Coloring works! Markups now place a large, bright "9003 TEST" label at the model origin (0,0,0) so you can definitely see if the markup API is working.</p>
-    <p>Zoom to origin or use "Fit View" to see the label.</p>
+    <p><strong>How to use:</strong></p>
+    <ol>
+      <li>Select rebar objects.</li>
+      <li>Click <strong>Debug Selected Properties</strong> → open console (F12) to see property sets/names.</li>
+      <li>Adjust TARGET_PSET / TARGET_PROP below if needed.</li>
+      <li>Click <strong>Color by Serial / Mark</strong> → same value = same random color.</li>
+    </ol>
   </div>
 
   <script>
     let workspaceApi = null;
     let viewer = null;
-    let markup = null;
     const statusEl = document.getElementById('status');
 
-    const TEST_SERIAL = "9003 TEST – MARKUP WORKING?";
+    // CONFIGURE THESE BASED ON YOUR MODEL (from debug console)
+    let TARGET_PSET = "Tekla Reinforcement - Bending List";  // Common: "ICOS Rebar", "Tekla Reinforcement - Bending List"
+    let TARGET_PROP = "Group position number";               // Common: "Serial number", "Rebar mark", "Pos_No"
+
+    const FALLBACKS = [
+      { pset: "ICOS Rebar", prop: "Serial number" },
+      { pset: "Tekla Reinforcement - Bending List", prop: "Rebar mark" },
+      { pset: "Pset_ReinforcementBarCommon", prop: "BarMark" }
+    ];
 
     async function initExtension() {
       try {
         workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
-        markup = workspaceApi.markup;
-        statusEl.textContent = "Connected – Ready to use! (Test Mode)";
+        statusEl.textContent = "Connected – Ready to use!";
         statusEl.className = "text-success";
-        console.log("Trimble Connect Workspace API connected successfully");
+        console.log("Connected");
       } catch (error) {
-        statusEl.textContent = "Connection failed: " + (error?.message || error || "Unknown");
+        statusEl.textContent = "Connection failed: " + (error?.message || error);
         statusEl.className = "text-danger";
-        console.error("Connection error:", error);
+        console.error(error);
       }
     }
 
-    async function colorByTestSerial() {
-      if (!viewer) return alert("Not connected");
+    const serialColorMap = new Map();
 
+    function randomColor() {
+      return { r: Math.floor(Math.random() * 256), g: Math.floor(Math.random() * 256), b: Math.floor(Math.random() * 256) };
+    }
+
+    async function debugProperties() {
+      if (!viewer) return alert("Not connected");
       const selection = await viewer.getSelection();
-      if (!selection || selection.length === 0) return alert("Please select one or more rebar objects first");
+      if (!selection || selection.length === 0) return alert("Select rebar first");
 
       const basicObjects = await viewer.getObjects({ selected: true });
-      let totalProcessed = 0;
+      console.clear();
+      console.log("%c=== REBAR PROPERTIES DEBUG ===", "font-weight:bold; color:blue");
 
       for (const model of basicObjects) {
         const runtimeIds = model.objects.map(obj => obj.id);
         if (runtimeIds.length === 0) continue;
 
-        await viewer.setObjectState(
-          {
-            modelObjectIds: [{
-              modelId: model.modelId,
-              objectRuntimeIds: runtimeIds
-            }]
-          },
-          { color: { r: 255, g: 0, b: 255 } }
-        );
-
-        totalProcessed += runtimeIds.length;
+        const fullObjects = await viewer.getObjectProperties({ modelId: model.modelId, objectRuntimeIds: runtimeIds });
+        fullObjects.forEach((obj, i) => {
+          console.log(`\nObject ${i+1}`);
+          const propSets = obj.properties?.propertySets || [];
+          propSets.forEach(ps => {
+            console.log(`%cSet: ${ps.name}`, "font-weight:bold; color:green");
+            ps.properties.forEach(p => console.log(`  • ${p.name}: ${p.value}`));
+          });
+        });
       }
-
-      alert(`Applied bright magenta color to ${totalProcessed} selected rebar(s)`);
+      alert("Check console (F12) for properties!");
     }
 
-    async function addTestMarkups() {
-      if (!viewer || !markup) return alert("Not connected or Markup API unavailable");
-
-      // Force a very visible markup at the absolute origin (0,0,0)
-      const testMarkup = [{
-        text: TEST_SERIAL,
-        position: { x: 0, y: 0, z: 0 },
-        color: { r: 255, g: 255, b: 0 },           // Bright yellow text
-        fontSize: 100,                             // Very large
-        backgroundColor: { r: 0, g: 0, b: 255, a: 220 },  // Blue semi-transparent background
-        bold: true
-      }];
-
-      try {
-        await markup.addTextMarkup(testMarkup);
-        alert("Markup added at origin (0,0,0)! Zoom to origin or use Fit View to see the large yellow '9003 TEST' label.");
-      } catch (err) {
-        console.error("Markup add error:", err);
-        alert("Failed to add markup – check console (F12)");
+    async function getSerialValue(obj) {
+      const propSets = obj.properties?.propertySets || [];
+      let targetSet = propSets.find(ps => ps.name === TARGET_PSET);
+      if (targetSet) {
+        const prop = targetSet.properties.find(p => p.name === TARGET_PROP);
+        if (prop?.value) return prop.value.toString();
       }
+      for (const fb of FALLBACKS) {
+        targetSet = propSets.find(ps => ps.name === fb.pset);
+        if (targetSet) {
+          const prop = targetSet.properties.find(p => p.name === fb.prop);
+          if (prop?.value) return prop.value.toString();
+        }
+      }
+      return null;
+    }
+
+    async function colorBySerial() {
+      if (!viewer) return alert("Not connected");
+      const selection = await viewer.getSelection();
+      if (!selection || selection.length === 0) return alert("Select rebar first");
+
+      const basicObjects = await viewer.getObjects({ selected: true });
+      let processed = 0;
+
+      for (const model of basicObjects) {
+        const runtimeIds = model.objects.map(obj => obj.id);
+        if (runtimeIds.length === 0) continue;
+
+        const fullObjects = await viewer.getObjectProperties({ modelId: model.modelId, objectRuntimeIds: runtimeIds });
+
+        for (const obj of fullObjects) {
+          const serial = await getSerialValue(obj);
+          if (!serial) continue;
+
+          let color = serialColorMap.get(serial);
+          if (!color) {
+            color = randomColor();
+            serialColorMap.set(serial, color);
+          }
+
+          await viewer.setObjectState(
+            { modelObjectIds: [{ modelId: model.modelId, objectRuntimeIds: [obj.id] }] },
+            { color }
+          );
+          processed++;
+        }
+      }
+
+      if (processed === 0) alert("No matching serial/mark found – use Debug button to check names");
+      else alert(`Colored ${processed} rebar(s) by serial/mark`);
     }
 
     async function resetColors() {
       if (!viewer) return alert("Not connected");
-
       try {
         await viewer.setObjectState(undefined, { color: null });
-        alert("All colors reset successfully");
-      } catch (error) {
-        console.error("Reset error:", error);
-        alert("Reset failed – try reloading the viewer");
-      }
-    }
-
-    async function removeAllMarkups() {
-      if (!markup) return alert("Markup API unavailable");
-
-      try {
-        await markup.clearAll();
-        alert("All markups removed successfully");
-      } catch (error) {
-        console.error("Remove markups error:", error);
-        alert("Failed to remove markups");
-      }
+        serialColorMap.clear();
+        alert("Colors reset");
+      } catch (e) { alert("Reset failed"); }
     }
 
     initExtension();
