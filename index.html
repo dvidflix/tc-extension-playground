@@ -55,11 +55,11 @@
       <li>Click <strong>Label Selected Rebar Ends</strong>.</li>
       <li>Single point markups will appear at Start and End points showing:</li>
       <ul>
-        <li>Serial Number (if available)</li>
-        <li>X, Y, Z coordinates (from properties)</li>
+        <li>Serial number (from ICOS Rebar)</li>
+        <li>X and Y coordinates (from BYLOR Fabrication)</li>
       </ul>
     </ol>
-    <p>Works with properties like "Start Point X", "Start Point Y", "End Point X", etc.</p>
+    <p>Configured for your model: Serial in "ICOS Rebar", points in "BYLOR Fabrication".</p>
   </div>
 
   <script>
@@ -68,11 +68,10 @@
     let markup = null;
     const statusEl = document.getElementById('status');
 
-    // CONFIG: Adjust these if your property names differ
-    const SERIAL_PSET = "ICOS Rebar";           // or "Tekla Reinforcement - Bending List", etc.
-    const SERIAL_PROP = "Serial number";        // or "Group position number", "Rebar mark"
-
-    const PROP_PREFIXES = ["Start Point ", "End Point "];  // Properties like "Start Point X", "End Point Y"
+    // Exact property set names from your screenshot
+    const POINTS_PSET = "BYLOR Fabrication";
+    const SERIAL_PSET = "ICOS Rebar";
+    const SERIAL_PROP = "Serial number";
 
     async function initExtension() {
       try {
@@ -89,23 +88,14 @@
       }
     }
 
-    async function getProperty(obj, prefix, coord) {
-      const psets = obj.properties?.propertySets || [];
-      for (const ps of psets) {
-        const prop = ps.properties?.find(p => p.name === prefix + coord);
-        if (prop?.value !== undefined) return Number(prop.value);
-      }
-      return null;
+    function getPropertySet(obj, psetName) {
+      return obj.properties?.propertySets?.find(ps => ps.name === psetName);
     }
 
-    async function getSerial(obj) {
-      const psets = obj.properties?.propertySets || [];
-      const targetSet = psets.find(ps => ps.name === SERIAL_PSET);
-      if (targetSet) {
-        const prop = targetSet.properties?.find(p => p.name === SERIAL_PROP);
-        if (prop?.value) return prop.value.toString();
-      }
-      return "N/A";
+    function getPropertyValue(pset, propName) {
+      if (!pset) return null;
+      const prop = pset.properties?.find(p => p.name === propName);
+      return prop?.value !== undefined ? Number(prop.value) : null;
     }
 
     async function labelRebarEnds() {
@@ -128,28 +118,30 @@
         });
 
         for (const obj of fullObjects) {
-          const serial = await getSerial(obj);
+          const pointsPset = getPropertySet(obj, POINTS_PSET);
+          const serialPset = getPropertySet(obj, SERIAL_PSET);
+          const serial = getPropertyValue(serialPset, SERIAL_PROP) ?? "N/A";
 
-          for (const prefix of PROP_PREFIXES) {
-            const x = await getProperty(obj, prefix, "X");
-            const y = await getProperty(obj, prefix, "Y");
-            const z = await getProperty(obj, prefix, "Z");
+          const points = [
+            { type: "Start", prefix: "Start Point " },
+            { type: "End",   prefix: "End Point " }
+          ];
 
-            // Only add if at least X and Y exist (your current model has X/Y only)
+          for (const pt of points) {
+            const x = getPropertyValue(pointsPset, pt.prefix + "X");
+            const y = getPropertyValue(pointsPset, pt.prefix + "Y");
+
             if (x !== null && y !== null) {
               const labelLines = [
                 `Serial: ${serial}`,
                 `X: ${x.toFixed(0)}`,
                 `Y: ${y.toFixed(0)}`
               ];
-              if (z !== null) labelLines.push(`Z: ${z.toFixed(0)}`);
-
-              const pointType = prefix.includes("Start") ? "Start" : "End";
 
               singlePointMarkups.push({
-                position: { x, y, z: z ?? y },  // Use Y as fallback Z if no Z
-                text: `${pointType} Point\n${labelLines.join("\n")}`,
-                color: prefix.includes("Start") ? { r: 0, g: 255, b: 0 } : { r: 255, g: 0, b: 0 },  // Green start, Red end
+                position: { x, y, z: 0 },  // Z not available yet – use 0
+                text: `${pt.type} Point\n${labelLines.join("\n")}`,
+                color: pt.type === "Start" ? { r: 0, g: 255, b: 0 } : { r: 255, g: 0, b: 0 },  // Green start, Red end
                 fontSize: 50,
                 bold: true
               });
@@ -160,7 +152,7 @@
       }
 
       if (count === 0) {
-        alert("No Start/End Point properties found in selected rebar");
+        alert("No Start/End Point X/Y properties found in 'BYLOR Fabrication' pset, or no Serial in 'ICOS Rebar'");
         return;
       }
 
@@ -174,17 +166,17 @@
     }
 
     async function resetColors() {
-      if (!viewer) return alert("Not connected");
+      if (!viewer) return;
       try {
         await viewer.setObjectState(undefined, { color: null });
-        alert("All colors reset");
+        alert("Colors reset");
       } catch (e) {
-        alert("Reset colors failed");
+        alert("Reset failed");
       }
     }
 
     async function clearAllMarkups() {
-      if (!markup) return alert("Markup API unavailable");
+      if (!markup) return;
       try {
         await markup.clearAll();
         alert("All markups cleared");
