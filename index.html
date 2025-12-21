@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rebar End Points Labeler (Single Point Markup)</title>
+  <title>Rebar End Points Labeler (Random Test Mode)</title>
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -32,13 +32,13 @@
 </head>
 <body>
 
-  <h3>Rebar End Points Labeler</h3>
+  <h3>Rebar End Points Labeler – Random Test Mode</h3>
 
   <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
-    <button class="btn btn-success btn-lg btn-block" onclick="labelRebarEnds()">
-      Label Selected Rebar Ends (Start + End)
+    <button class="btn btn-success btn-lg btn-block" onclick="labelRebarEndsRandom()">
+      Label Selected Rebar Ends with Random Data (Test)
     </button>
     <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
       Reset Colors
@@ -49,17 +49,15 @@
   </div>
 
   <div class="info mt-4">
-    <p><strong>How to use:</strong></p>
-    <ol>
-      <li>Select one or more rebar bars in the 3D view.</li>
-      <li>Click <strong>Label Selected Rebar Ends</strong>.</li>
-      <li>Single point markups will appear at Start and End points showing:</li>
-      <ul>
-        <li>Serial number (from ICOS Rebar)</li>
-        <li>X and Y coordinates (from BYLOR Fabrication)</li>
-      </ul>
-    </ol>
-    <p>Configured for your model: Serial in "ICOS Rebar", points in "BYLOR Fabrication".</p>
+    <p><strong>Random Test Mode</strong></p>
+    <p>This version completely ignores real properties and generates random values for:</p>
+    <ul>
+      <li>Serial number (9000–9999)</li>
+      <li>Start X/Y (±5000 around approximate bar center)</li>
+      <li>End X/Y (offset from start)</li>
+    </ul>
+    <p>Purpose: Prove that single point markups work correctly in your extension.</p>
+    <p>Labels will appear near the selected rebar (using bounding box centers + small offset).</p>
   </div>
 
   <script>
@@ -68,17 +66,12 @@
     let markup = null;
     const statusEl = document.getElementById('status');
 
-    // Exact property set names from your screenshot
-    const POINTS_PSET = "BYLOR Fabrication";
-    const SERIAL_PSET = "ICOS Rebar";
-    const SERIAL_PROP = "Serial number";
-
     async function initExtension() {
       try {
         workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
-        statusEl.textContent = "Connected – Ready to use!";
+        statusEl.textContent = "Connected – Ready to use! (Random Test Mode)";
         statusEl.className = "text-success";
         console.log("Connected – MarkupAPI available:", !!markup);
       } catch (error) {
@@ -88,17 +81,15 @@
       }
     }
 
-    function getPropertySet(obj, psetName) {
-      return obj.properties?.propertySets?.find(ps => ps.name === psetName);
+    function randomSerial() {
+      return Math.floor(9000 + Math.random() * 1000).toString();
     }
 
-    function getPropertyValue(pset, propName) {
-      if (!pset) return null;
-      const prop = pset.properties?.find(p => p.name === propName);
-      return prop?.value !== undefined ? Number(prop.value) : null;
+    function randomOffset() {
+      return Math.floor(Math.random() * 2000) - 1000;  // -1000 to +1000
     }
 
-    async function labelRebarEnds() {
+    async function labelRebarEndsRandom() {
       if (!viewer || !markup) return alert("Not connected or Markup API unavailable");
 
       const selection = await viewer.getSelection();
@@ -112,53 +103,57 @@
         const runtimeIds = model.objects.map(obj => obj.id);
         if (runtimeIds.length === 0) continue;
 
-        const fullObjects = await viewer.getObjectProperties({
+        // Get bounding boxes to place labels near actual bar ends
+        const bbs = await viewer.getObjectBoundingBoxes({
           modelId: model.modelId,
           objectRuntimeIds: runtimeIds
         });
 
-        for (const obj of fullObjects) {
-          const pointsPset = getPropertySet(obj, POINTS_PSET);
-          const serialPset = getPropertySet(obj, SERIAL_PSET);
-          const serial = getPropertyValue(serialPset, SERIAL_PROP) ?? "N/A";
+        bbs.forEach((bb, i) => {
+          if (!bb || !bb.center) return;
 
-          const points = [
-            { type: "Start", prefix: "Start Point " },
-            { type: "End",   prefix: "End Point " }
-          ];
+          const center = bb.center;
+          const serial = randomSerial();
 
-          for (const pt of points) {
-            const x = getPropertyValue(pointsPset, pt.prefix + "X");
-            const y = getPropertyValue(pointsPset, pt.prefix + "Y");
+          // Approximate Start = center - offset, End = center + offset
+          const offsetX = randomOffset();
+          const offsetY = randomOffset();
 
-            if (x !== null && y !== null) {
-              const labelLines = [
-                `Serial: ${serial}`,
-                `X: ${x.toFixed(0)}`,
-                `Y: ${y.toFixed(0)}`
-              ];
+          const startX = center.x + offsetX;
+          const startY = center.y + offsetY;
+          const endX = center.x - offsetX;
+          const endY = center.y - offsetY;
 
-              singlePointMarkups.push({
-                position: { x, y, z: 0 },  // Z not available yet – use 0
-                text: `${pt.type} Point\n${labelLines.join("\n")}`,
-                color: pt.type === "Start" ? { r: 0, g: 255, b: 0 } : { r: 255, g: 0, b: 0 },  // Green start, Red end
-                fontSize: 50,
-                bold: true
-              });
-              count++;
-            }
-          }
-        }
+          // Start point (green)
+          singlePointMarkups.push({
+            position: { x: startX, y: startY, z: center.z },
+            text: `Start Point\nSerial: ${serial}\nX: ${Math.round(startX)}\nY: ${Math.round(startY)}`,
+            color: { r: 0, g: 255, b: 0 },
+            fontSize: 50,
+            bold: true
+          });
+
+          // End point (red)
+          singlePointMarkups.push({
+            position: { x: endX, y: endY, z: center.z },
+            text: `End Point\nSerial: ${serial}\nX: ${Math.round(endX)}\nY: ${Math.round(endY)}`,
+            color: { r: 255, g: 0, b: 0 },
+            fontSize: 50,
+            bold: true
+          });
+
+          count += 2;
+        });
       }
 
       if (count === 0) {
-        alert("No Start/End Point X/Y properties found in 'BYLOR Fabrication' pset, or no Serial in 'ICOS Rebar'");
+        alert("No bounding boxes found for selected rebar – unable to place labels");
         return;
       }
 
       try {
         await markup.addSinglePointMarkups(singlePointMarkups);
-        alert(`Added ${count} single point labels (Start + End) on selected rebar`);
+        alert(`Added ${count} random single point labels (Start + End) near selected rebar`);
       } catch (err) {
         console.error(err);
         alert("Failed to add single point markups");
