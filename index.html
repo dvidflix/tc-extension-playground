@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rebar End Points Labeler (Random Test Mode)</title>
+  <title>Rebar End Points Labeler (Text Markup Test)</title>
 
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
@@ -32,16 +32,16 @@
 </head>
 <body>
 
-  <h3>Rebar End Points Labeler – Random Test Mode</h3>
+  <h3>Rebar End Points Labeler – Text Markup Test</h3>
 
   <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
-    <button class="btn btn-success btn-lg btn-block" onclick="labelRebarEndsRandom()">
-      Label Selected Rebar Ends with Random Data (Test)
+    <button class="btn btn-success btn-lg btn-block" onclick="addTextLabelsTest()">
+      Add Text Labels "TEST LABEL" at Origin (0,0,0)
     </button>
-    <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
-      Reset Colors
+    <button class="btn btn-primary btn-lg btn-block" onclick="addTextLabelsOnRebar()">
+      Add Text Labels on Selected Rebar (Using Bounding Box)
     </button>
     <button class="btn btn-danger btn-lg btn-block" onclick="clearAllMarkups()">
       Clear All Markups
@@ -49,15 +49,10 @@
   </div>
 
   <div class="info mt-4">
-    <p><strong>Random Test Mode</strong></p>
-    <p>This version completely ignores real properties and generates random values for:</p>
-    <ul>
-      <li>Serial number (9000–9999)</li>
-      <li>Start X/Y (±5000 around approximate bar center)</li>
-      <li>End X/Y (offset from start)</li>
-    </ul>
-    <p>Purpose: Prove that single point markups work correctly in your extension.</p>
-    <p>Labels will appear near the selected rebar (using bounding box centers + small offset).</p>
+    <p><strong>Test for Text Markups (not Single Point)</strong></p>
+    <p>Single point markups may not be visible or fully supported in extensions – switching to regular text markups.</p>
+    <p>First button adds a huge "TEST LABEL" at origin (0,0,0) – fit view to see it.</p>
+    <p>Second button adds "TEST REBAR LABEL" near selected rebar centers.</p>
   </div>
 
   <script>
@@ -71,9 +66,9 @@
         workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
-        statusEl.textContent = "Connected – Ready to use! (Random Test Mode)";
+        statusEl.textContent = "Connected – Ready to use!";
         statusEl.className = "text-success";
-        console.log("Connected – MarkupAPI available:", !!markup);
+        console.log("Connected – MarkupAPI:", !!markup);
       } catch (error) {
         statusEl.textContent = "Connection failed: " + (error?.message || error);
         statusEl.className = "text-danger";
@@ -81,100 +76,67 @@
       }
     }
 
-    function randomSerial() {
-      return Math.floor(9000 + Math.random() * 1000).toString();
-    }
+    async function addTextLabelsTest() {
+      if (!markup) return alert("Markup API unavailable");
 
-    function randomOffset() {
-      return Math.floor(Math.random() * 2000) - 1000;  // -1000 to +1000
-    }
-
-    async function labelRebarEndsRandom() {
-      if (!viewer || !markup) return alert("Not connected or Markup API unavailable");
-
-      const selection = await viewer.getSelection();
-      if (!selection || selection.length === 0) return alert("Please select rebar bars first");
-
-      const basicObjects = await viewer.getObjects({ selected: true });
-      const singlePointMarkups = [];
-      let count = 0;
-
-      for (const model of basicObjects) {
-        const runtimeIds = model.objects.map(obj => obj.id);
-        if (runtimeIds.length === 0) continue;
-
-        // Get bounding boxes to place labels near actual bar ends
-        const bbs = await viewer.getObjectBoundingBoxes({
-          modelId: model.modelId,
-          objectRuntimeIds: runtimeIds
-        });
-
-        bbs.forEach((bb, i) => {
-          if (!bb || !bb.center) return;
-
-          const center = bb.center;
-          const serial = randomSerial();
-
-          // Approximate Start = center - offset, End = center + offset
-          const offsetX = randomOffset();
-          const offsetY = randomOffset();
-
-          const startX = center.x + offsetX;
-          const startY = center.y + offsetY;
-          const endX = center.x - offsetX;
-          const endY = center.y - offsetY;
-
-          // Start point (green)
-          singlePointMarkups.push({
-            position: { x: startX, y: startY, z: center.z },
-            text: `Start Point\nSerial: ${serial}\nX: ${Math.round(startX)}\nY: ${Math.round(startY)}`,
-            color: { r: 0, g: 255, b: 0 },
-            fontSize: 50,
-            bold: true
-          });
-
-          // End point (red)
-          singlePointMarkups.push({
-            position: { x: endX, y: endY, z: center.z },
-            text: `End Point\nSerial: ${serial}\nX: ${Math.round(endX)}\nY: ${Math.round(endY)}`,
-            color: { r: 255, g: 0, b: 0 },
-            fontSize: 50,
-            bold: true
-          });
-
-          count += 2;
-        });
-      }
-
-      if (count === 0) {
-        alert("No bounding boxes found for selected rebar – unable to place labels");
-        return;
-      }
+      const testMarkups = [{
+        text: "TEST LABEL – TEXT MARKUP WORKING?",
+        position: { x: 0, y: 0, z: 0 },
+        color: { r: 255, g: 255, b: 0 },
+        fontSize: 100,
+        backgroundColor: { r: 255, g: 0, b: 0, a: 200 },
+        bold: true
+      }];
 
       try {
-        await markup.addSinglePointMarkups(singlePointMarkups);
-        alert(`Added ${count} random single point labels (Start + End) near selected rebar`);
+        await markup.addTextMarkup(testMarkups);
+        alert("Added large text label at origin (0,0,0) – use Fit View or zoom to center to see it!");
       } catch (err) {
         console.error(err);
-        alert("Failed to add single point markups");
+        alert("Failed to add text markup");
       }
     }
 
-    async function resetColors() {
-      if (!viewer) return;
-      try {
-        await viewer.setObjectState(undefined, { color: null });
-        alert("Colors reset");
-      } catch (e) {
-        alert("Reset failed");
+    async function addTextLabelsOnRebar() {
+      if (!viewer || !markup) return alert("Not connected");
+
+      const selection = await viewer.getSelection();
+      if (!selection.length) return alert("Select rebar first");
+
+      const objects = await viewer.getObjects({ selected: true });
+      const textMarkups = [];
+      let count = 0;
+
+      for (const model of objects) {
+        const ids = model.objects.map(o => o.id);
+        const bbs = await viewer.getObjectBoundingBoxes({ modelId: model.modelId, objectRuntimeIds: ids });
+
+        bbs.forEach(bb => {
+          if (!bb || !bb.center) return;
+
+          textMarkups.push({
+            text: "TEST REBAR LABEL\nSerial: 9999\nX/Y/Z here",
+            position: { x: bb.center.x, y: bb.center.y + 5, z: bb.center.z },
+            color: { r: 0, g: 255, b: 255 },
+            fontSize: 60,
+            backgroundColor: { r: 0, g: 0, b: 0, a: 200 },
+            bold: true
+          });
+          count++;
+        });
       }
+
+      if (count === 0) return alert("No bounding boxes");
+
+      await markup.addTextMarkup(textMarkups);
+      alert(`Added ${count} text labels on selected rebar`);
     }
 
     async function clearAllMarkups() {
       if (!markup) return;
       try {
         await markup.clearAll();
-        alert("All markups cleared");
+        alert("Cleared");
       } catch (e) {
         alert("Clear failed");
       }
