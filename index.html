@@ -22,6 +22,9 @@
   <div id="status" class="text-info">Connecting to viewer...</div>
 
   <div>
+    <button class="btn btn-info btn-lg btn-block" onclick="debugProperties()">
+      Debug Selected Properties (Open Console F12)
+    </button>
     <button class="btn btn-primary btn-lg btn-block" onclick="colorBySerial()">
       Color Selected by Serial Number
     </button>
@@ -34,10 +37,10 @@
     <p><strong>How to use:</strong></p>
     <ol>
       <li>Select rebar bars.</li>
-      <li>Click <strong>Color Selected by Serial Number</strong>.</li>
-      <li>Rebars with the same serial (from "ICOS Rebar") get the same random color.</li>
+      <li>Click <strong>Debug Selected Properties</strong> → press F12 → Console tab → see exact pset names (e.g., "ICOS Rebar").</li>
+      <li>Update SERIAL_PSET below if needed.</li>
+      <li>Click <strong>Color Selected by Serial Number</strong> → same serial = same color.</li>
     </ol>
-    <p>Programmatic markups/labels are not supported in side-panel extensions.</p>
   </div>
 
   <script>
@@ -45,8 +48,9 @@
     let viewer = null;
     const statusEl = document.getElementById('status');
 
-    const SERIAL_PSET = "ICOS Rebar";
-    const SERIAL_PROP = "Serial number";
+    // UPDATE THESE AFTER DEBUGGING
+    let SERIAL_PSET = "ICOS Rebar";  // Try "ICOS_Rebar", "ICOS BBS", etc. from console
+    let SERIAL_PROP = "Serial number";
 
     async function initExtension() {
       try {
@@ -61,6 +65,31 @@
       }
     }
 
+    async function debugProperties() {
+      if (!viewer) return alert("Not connected");
+      const sel = await viewer.getSelection();
+      if (!sel.length) return alert("Select rebar first");
+
+      const objects = await viewer.getObjects({ selected: true });
+      console.clear();
+      console.log("%c=== REBAR PROPERTIES DEBUG ===", "font-weight:bold; color:blue");
+
+      for (const model of objects) {
+        const ids = model.objects.map(o => o.id);
+        const props = await viewer.getObjectProperties({ modelId: model.modelId, objectRuntimeIds: ids });
+
+        props.forEach((obj, i) => {
+          console.log(`\nObject ${i+1}`);
+          const psets = obj.properties?.propertySets || [];
+          psets.forEach(ps => {
+            console.log(`%cPset: "${ps.name}"`, "font-weight:bold; color:green");
+            ps.properties.forEach(p => console.log(`  • ${p.name}: ${p.value}`));
+          });
+        });
+      }
+      alert("Check console (F12) for exact pset/property names!");
+    }
+
     const serialColorMap = new Map();
 
     function randomColor() {
@@ -71,7 +100,7 @@
       if (!viewer) return alert("Not connected");
 
       const selection = await viewer.getSelection();
-      if (!selection || selection.length === 0) return alert("Select rebar first");
+      if (!selection.length) return alert("Select rebar first");
 
       const basicObjects = await viewer.getObjects({ selected: true });
       let processed = 0;
@@ -85,9 +114,10 @@
         for (const obj of fullObjects) {
           const psets = obj.properties?.propertySets || [];
           const serialPset = psets.find(ps => ps.name === SERIAL_PSET);
-          const serialProp = serialPset?.properties?.find(p => p.name === SERIAL_PROP);
-          const serial = serialProp?.value?.toString() || null;
+          if (!serialPset) continue;
 
+          const serialProp = serialPset.properties?.find(p => p.name === SERIAL_PROP);
+          const serial = serialProp?.value?.toString();
           if (!serial) continue;
 
           let color = serialColorMap.get(serial);
@@ -104,7 +134,7 @@
         }
       }
 
-      if (processed === 0) alert("No Serial number found in 'ICOS Rebar' pset");
+      if (processed === 0) alert(`No "${SERIAL_PROP}" found in "${SERIAL_PSET}" pset – use Debug button to check names`);
       else alert(`Colored ${processed} rebar(s) by serial number`);
     }
 
