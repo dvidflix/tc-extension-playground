@@ -3,90 +3,197 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rebar Serial Labeling Tool (Recreated)</title>
+  <title>Rebar End Points Labeler (Single Point Markup)</title>
+
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
   <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
   <style>
-    body { margin: 0; font-family: Arial; }
-    #viewer { width: 100%; height: 85vh; border: none; }
-    .controls { padding: 10px; background: #eee; text-align: center; }
-    button { margin: 5px; padding: 10px 20px; font-size: 16px; }
+    body {
+      padding: 1rem;
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h3 { margin-bottom: 1rem; }
+    #status {
+      margin: 1rem 0;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+    .btn { margin: 0.25rem; }
+    .info {
+      margin-top: auto;
+      font-size: 0.9rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
-  <div class="controls">
-    <button onclick="labelRebar()">Label Selected Rebar with Serial Number</button>
-    <button onclick="colorRebar()">Color Selected by Serial</button>
-    <button onclick="clearMarkups()">Clear Markups</button>
-    <button onclick="resetColors()">Reset Colors</button>
+
+  <h3>Rebar End Points Labeler</h3>
+
+  <div id="status" class="text-info">Connecting to viewer...</div>
+
+  <div>
+    <button class="btn btn-success btn-lg btn-block" onclick="labelRebarEnds()">
+      Label Selected Rebar Ends (Start + End)
+    </button>
+    <button class="btn btn-warning btn-lg btn-block" onclick="resetColors()">
+      Reset Colors
+    </button>
+    <button class="btn btn-danger btn-lg btn-block" onclick="clearAllMarkups()">
+      Clear All Markups
+    </button>
   </div>
-  <iframe id="viewer"></iframe>
+
+  <div class="info mt-4">
+    <p><strong>How to use:</strong></p>
+    <ol>
+      <li>Select one or more rebar bars in the 3D view.</li>
+      <li>Click <strong>Label Selected Rebar Ends</strong>.</li>
+      <li>Single point markups will appear at Start and End points showing:</li>
+      <ul>
+        <li>Serial Number (if available)</li>
+        <li>X, Y, Z coordinates (from properties)</li>
+      </ul>
+    </ol>
+    <p>Works with properties like "Start Point X", "Start Point Y", "End Point X", etc.</p>
+  </div>
 
   <script>
     let workspaceApi = null;
     let viewer = null;
     let markup = null;
+    const statusEl = document.getElementById('status');
 
-    async function init() {
-      const iframe = document.getElementById('viewer');
-      // REPLACE WITH YOUR PROJECT EMBED URL
-      iframe.src = "https://3d.connect.trimble.com/embed?projectId=YOUR_ID&accessToken=YOUR_TOKEN";
+    // CONFIG: Adjust these if your property names differ
+    const SERIAL_PSET = "ICOS Rebar";           // or "Tekla Reinforcement - Bending List", etc.
+    const SERIAL_PROP = "Serial number";        // or "Group position number", "Rebar mark"
 
+    const PROP_PREFIXES = ["Start Point ", "End Point "];  // Properties like "Start Point X", "End Point Y"
+
+    async function initExtension() {
       try {
-        workspaceApi = await TrimbleConnectWorkspace.connect(iframe.contentWindow);
+        workspaceApi = await TrimbleConnectWorkspace.connect(window.parent);
         viewer = workspaceApi.viewer;
         markup = workspaceApi.markup;
-        console.log("Connected – Full MarkupAPI available!");
-      } catch (err) {
-        alert("Connection failed: " + err.message);
+        statusEl.textContent = "Connected – Ready to use!";
+        statusEl.className = "text-success";
+        console.log("Connected – MarkupAPI available:", !!markup);
+      } catch (error) {
+        statusEl.textContent = "Connection failed: " + (error?.message || error);
+        statusEl.className = "text-danger";
+        console.error(error);
       }
     }
 
-    async function labelRebar() {
-      if (!markup || !viewer) return alert("Not connected");
+    async function getProperty(obj, prefix, coord) {
+      const psets = obj.properties?.propertySets || [];
+      for (const ps of psets) {
+        const prop = ps.properties?.find(p => p.name === prefix + coord);
+        if (prop?.value !== undefined) return Number(prop.value);
+      }
+      return null;
+    }
 
-      const sel = await viewer.getSelection();
-      if (!sel.length) return alert("Select rebar first");
+    async function getSerial(obj) {
+      const psets = obj.properties?.propertySets || [];
+      const targetSet = psets.find(ps => ps.name === SERIAL_PSET);
+      if (targetSet) {
+        const prop = targetSet.properties?.find(p => p.name === SERIAL_PROP);
+        if (prop?.value) return prop.value.toString();
+      }
+      return "N/A";
+    }
 
-      const objects = await viewer.getObjects({ selected: true });
-      const markups = [];
+    async function labelRebarEnds() {
+      if (!viewer || !markup) return alert("Not connected or Markup API unavailable");
+
+      const selection = await viewer.getSelection();
+      if (!selection || selection.length === 0) return alert("Please select rebar bars first");
+
+      const basicObjects = await viewer.getObjects({ selected: true });
+      const singlePointMarkups = [];
       let count = 0;
 
-      for (const model of objects) {
-        const ids = model.objects.map(o => o.id);
-        const props = await viewer.getObjectProperties({ modelId: model.modelId, objectRuntimeIds: ids });
-        const bbs = await viewer.getObjectBoundingBoxes({ modelId: model.modelId, objectRuntimeIds: ids });
+      for (const model of basicObjects) {
+        const runtimeIds = model.objects.map(obj => obj.id);
+        if (runtimeIds.length === 0) continue;
 
-        props.forEach((obj, i) => {
-          // Adjust for your property set/name
-          const psets = obj.properties?.propertySets || [];
-          const rebarSet = psets.find(ps => ps.name.includes("Rebar") || ps.name.includes("Tekla"));
-          const serial = rebarSet?.properties?.find(p => p.name.includes("Serial") || p.name.includes("position") || p.name.includes("mark"))?.value || "N/A";
-
-          const center = bbs[i]?.center;
-          if (!center) return;
-
-          markups.push({
-            text: serial.toString(),
-            position: { x: center.x, y: center.y + 3, z: center.z },
-            color: { r: 255, g: 255, b: 0 },
-            fontSize: 50,
-            backgroundColor: { r: 0, g: 0, b: 0, a: 200 },
-            bold: true
-          });
-          count++;
+        const fullObjects = await viewer.getObjectProperties({
+          modelId: model.modelId,
+          objectRuntimeIds: runtimeIds
         });
+
+        for (const obj of fullObjects) {
+          const serial = await getSerial(obj);
+
+          for (const prefix of PROP_PREFIXES) {
+            const x = await getProperty(obj, prefix, "X");
+            const y = await getProperty(obj, prefix, "Y");
+            const z = await getProperty(obj, prefix, "Z");
+
+            // Only add if at least X and Y exist (your current model has X/Y only)
+            if (x !== null && y !== null) {
+              const labelLines = [
+                `Serial: ${serial}`,
+                `X: ${x.toFixed(0)}`,
+                `Y: ${y.toFixed(0)}`
+              ];
+              if (z !== null) labelLines.push(`Z: ${z.toFixed(0)}`);
+
+              const pointType = prefix.includes("Start") ? "Start" : "End";
+
+              singlePointMarkups.push({
+                position: { x, y, z: z ?? y },  // Use Y as fallback Z if no Z
+                text: `${pointType} Point\n${labelLines.join("\n")}`,
+                color: prefix.includes("Start") ? { r: 0, g: 255, b: 0 } : { r: 255, g: 0, b: 0 },  // Green start, Red end
+                fontSize: 50,
+                bold: true
+              });
+              count++;
+            }
+          }
+        }
       }
 
-      await markup.addTextMarkup(markups);
-      alert(`Added ${count} serial labels`);
+      if (count === 0) {
+        alert("No Start/End Point properties found in selected rebar");
+        return;
+      }
+
+      try {
+        await markup.addSinglePointMarkups(singlePointMarkups);
+        alert(`Added ${count} single point labels (Start + End) on selected rebar`);
+      } catch (err) {
+        console.error(err);
+        alert("Failed to add single point markups");
+      }
     }
 
-    // Add similar functions for coloring if needed...
+    async function resetColors() {
+      if (!viewer) return alert("Not connected");
+      try {
+        await viewer.setObjectState(undefined, { color: null });
+        alert("All colors reset");
+      } catch (e) {
+        alert("Reset colors failed");
+      }
+    }
 
-    async function clearMarkups() { if (markup) await markup.clearAll(); }
-    async function resetColors() { if (viewer) await viewer.setObjectState(undefined, { color: null }); }
+    async function clearAllMarkups() {
+      if (!markup) return alert("Markup API unavailable");
+      try {
+        await markup.clearAll();
+        alert("All markups cleared");
+      } catch (e) {
+        alert("Clear failed");
+      }
+    }
 
-    init();
+    initExtension();
   </script>
 </body>
 </html>
